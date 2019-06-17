@@ -1,7 +1,7 @@
 CC = gcc
 FLAGS = -O3
 
-TARGETS = lynsyn dummy
+TARGETS = lynsyn dummy rapl-sysfs
 
 all: $(TARGETS)
 

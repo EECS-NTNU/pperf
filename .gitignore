@@ -1,6 +1,7 @@
 sthem
 lynsyn
 dummy
+rapl-sysfs
 *.o
 pmu/*.o
 

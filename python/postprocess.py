@@ -86,7 +86,7 @@ if (magic == 1 and not args.volts):
     print("ERROR: profile contains current pmu data, volts argument is required!")
     sys.exit(1)
 
-if (not args.volts):
+if (magic == 3 or not args.volts):
     args.volts = 1
 
 profile['volts'] = args.volts
