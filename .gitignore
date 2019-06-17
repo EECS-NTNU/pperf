@@ -1,0 +1,6 @@
+sthem
+lynsyn
+dummy
+*.o
+pmu/*.o
+
