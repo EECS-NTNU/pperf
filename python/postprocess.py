@@ -161,19 +161,18 @@ profile['target'] = sampleParser.binaries[0]['binary']
 
 i = 0
 prevThreadCpuTimes = {}
-prevSampleWallTime = None
+offsetSampleWallTime = None
 for sample in rawSamples:
     if (i % 1000 == 0):
         progress = int((i + 1) * 100 / sampleCount)
         print(f"Post processing... {progress}%\r", end="")
     i += 1
 
-    if prevSampleWallTime is None:
-        prevSampleWallTime = sample[0]
+    if offsetSampleWallTime is None:
+        offsetSampleWallTime = sample[0]
 
     processedSample = []
-    sampleWallTime = sample[0] - prevSampleWallTime
-    prevSampleWallTime = sample[0]
+    sampleWallTime = sample[0] - offsetSampleWallTime
     samplePower = sample[1] * useVolts
 
     for thread in sample[2]:
