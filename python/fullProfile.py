@@ -72,14 +72,14 @@ if (args.interpolate):
     if (len(samples) % args.interpolate != 0):
         samples = numpy.delete(samples, numpy.s_[-(len(samples) % args.interpolate):], axis=0)
     samples = samples.reshape(-1, args.interpolate, 3)
-    samples = numpy.array([[x[:, :1].mean(), 0, x[0][2]] for x in samples], dtype=object)
+    samples = numpy.array([[x[:, :1].mean(), x[0][1], x[0][2]] for x in samples], dtype=object)
     samples = samples.reshape(-1, 3)
     print("finished")
 else:
     args.interpolate = 1
 
-times = numpy.arange(len(samples)) * avgSampleTime * args.interpolate + args.start
-powers = samples[:, :1].flatten()
+powers = samples[:, 0:1].flatten()
+times = samples[:, 1:2].flatten()
 
 threads = []
 threadDisplay = []
@@ -91,11 +91,11 @@ if not args.no_threads:
     sys.stdout.flush()
     threadNone = [None] * len(samples)
     threadMap = {}
-    for i in range(0, len(samples)):
+    for index, sample in enumerate(samples):
         # Determine possible active cores
-        activeCores = min(len(samples[i][2]), cpus)
-
-        for threadSample in samples[i][2]:
+        activeCores = min(len(sample[2]), cpus)
+        sampleWallTime = sample[0]
+        for threadSample in sample[2]:
             threadSampleCpuTime = threadSample[1]
 
             if threadSample[0] in threadMap:
@@ -106,10 +106,10 @@ if not args.no_threads:
                 threads.append(list.copy(threadNone))
                 threadDisplay.append(list.copy(threadNone))
 
-            cpuShare = min(threadSampleCpuTime, avgSampleTime) / (avgSampleTime * activeCores)
+            cpuShare = threadSampleCpuTime / (sampleWallTime * activeCores)
 
-            threads[threadIndex][i] = threadIndex + 1
-            threadDisplay[threadIndex][i] = sampleFormatter.sanitizeOutput(sampleFormatter.formatData(threadSample[2]), lStringStrip=profile['target']) + f", {cpuShare:.2f}"
+            threads[threadIndex][index] = threadIndex + 1
+            threadDisplay[threadIndex][index] = sampleFormatter.sanitizeOutput(sampleFormatter.formatData(threadSample[2]), lStringStrip=profile['target']) + f", {cpuShare:.2f}"
     print("finished")
 
 

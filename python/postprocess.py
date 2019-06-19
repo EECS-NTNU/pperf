@@ -109,6 +109,7 @@ profile['samplingTime'] = (wallTimeUs / 1000000.0)
 profile['latencyTime'] = (latencyTimeUs / 1000000.0)
 
 rawSamples = []
+prevWallTimeMs = None
 
 for i in range(sampleCount):
     if (i % 1000 == 0):
@@ -116,23 +117,29 @@ for i in range(sampleCount):
         print(f"Reading raw samples... {progress}%\r", end="")
 
     try:
-        (current, threadCount, ) = struct.unpack_from(endianess + "dI", binProfile, binOffset)
+        (wallTimeMs, pmuValue, threadCount, ) = struct.unpack_from(endianess + "QdI", binProfile, binOffset)
         binOffset += 8 + 4
     except Exception as e:
         print("Unexpected end of file!")
         sys.exit(1)
 
-    sample = []
-    for j in range(threadCount):
-        try:
-            (tid, pc, cpuTimeNs, ) = struct.unpack_from(endianess + "IQQ", binProfile, binOffset)
-            binOffset += 4 + 8 + 8
-        except Exception as e:
-            print("Unexpected end of file!")
-            sys.exit(1)
-        sample.append([tid, pc, (cpuTimeNs / 1000000000.0)])
+    if (prevWallTimeMs is None):
+        prevWallTimeMs = wallTimeMs
 
-    rawSamples.append([current, sample])
+    if threadCount > 0:
+        sample = []
+        for j in range(threadCount):
+            try:
+                (tid, pc, cpuTimeNs, ) = struct.unpack_from(endianess + "IQQ", binProfile, binOffset)
+                binOffset += 4 + 8 + 8
+            except Exception as e:
+                print("Unexpected end of file!")
+                sys.exit(1)
+            sample.append([tid, pc, (cpuTimeNs / 1000000000.0)])
+
+        rawSamples.append([((wallTimeMs - prevWallTimeMs) / 1000000.0), pmuValue, sample])
+
+    prevWallTimeMs = wallTimeMs
 
 print("Reading raw samples... finished!")
 vmmaps = []
@@ -167,20 +174,18 @@ for sample in rawSamples:
     i += 1
 
     processedSample = []
-    sampleCpuTime = 0
-
-    power = sample[0] * useVolts
-    for thread in sample[1]:
+    sampleWallTime = sample[0]
+    samplePower = sample[1] * useVolts
+    for thread in sample[2]:
         if not thread[0] in prevThreadCpuTimes:
             prevThreadCpuTimes[thread[0]] = thread[2]
 
         threadCpuTime = thread[2] - prevThreadCpuTimes[thread[0]]
         prevThreadCpuTimes[thread[0]] = thread[2]
-        sampleCpuTime += threadCpuTime
 
         processedSample.append([thread[0], threadCpuTime, sampleParser.parseFromPC(thread[1])])
 
-    profile['profile'].append([power, sampleCpuTime, processedSample])
+    profile['profile'].append([samplePower, sampleWallTime, processedSample])
 
 profile['binaries'] = sampleParser.getBinaryMap()
 profile['functions'] = sampleParser.getFunctionMap()

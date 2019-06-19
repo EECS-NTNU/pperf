@@ -4,4 +4,4 @@ dummy
 rapl-sysfs
 *.o
 pmu/*.o
-
+python/__pycache__

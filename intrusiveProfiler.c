@@ -1,16 +1,6 @@
 #include "intrusiveProfiler.h"
 
-// Switch between a fixed frequency timer, which blocks and a
-// single shot timer, which is engaged after every
-// cycle taking latency into account. The first one has low overhead
-// but inconsitent actual sampling frequencies, the last one is more
-// consistent but adds overhead due to time calculations and engaging
-// the timer every sample
-#define ADAPTIVE_FREQUENCY
 
-//Estimating the latency accounts cpu time in the sampler as latency
-//bascially ignoring any ptrace overhead, or all kernel calls at all
-//#define ESTIMATE_LATENCY
 
 #ifdef DEBUG
 #define debug_printf(...) fprintf(stderr, __VA_ARGS__);
@@ -131,7 +121,7 @@ struct task *getTask(pid_t const task) {
     return NULL;
 }
 
-void help(char const opt, char const *optarg) {
+void help(char const *exec, char const opt, char const *optarg) {
     FILE *out = stdout;
     if (opt != 0) {
         out = stderr;
@@ -141,16 +131,19 @@ void help(char const opt, char const *optarg) {
             fprintf(out, "Invalid parameter - %c\n", opt);
         }
     }
-    fprintf(out, "intrvelf [options] -- <command> [arguments]\n");
+    fprintf(out, "%s [options] -- <command> [arguments]\n", exec);
+    fprintf(out, "\n");
+    fprintf(out, "Compiled with PMU\n");
+    fprintf(out, "%s\n", pmuAbout());
     fprintf(out, "\n");
     fprintf(out, "Options:\n");
     fprintf(out, "  -o, --output=<file>       write to file\n");
     fprintf(out, "  -p, --pmu-arg=<pmu>       pmu argument\n");
     fprintf(out, "  -f, --frequency=<hertz>   sampling frequency\n");
-    fprintf(out, "  -d, --debug               output debug messages\n");
+    fprintf(out, "  -v, --verbose             verbsoe output at the end\n");
     fprintf(out, "  -h, --help                shows help\n");
     fprintf(out, "\n");
-    fprintf(out, "Example: intrvelf -o /tmp/map -f 10000 -o -- stress-ng --cpu 4\n");
+    fprintf(out, "Example: %s -o /tmp/map -f 1000 -v -- sleep 10\n", exec);
 }
 
 
@@ -165,11 +158,7 @@ struct timerData {
 
 struct callbackData {
     pid_t tid;
-#ifdef ADAPTIVE_FREQUENCY
     struct timespec lastInterrupt;
-#else
-    int   block;
-#endif
 };
 
 static struct callbackData _callback_data;
@@ -178,23 +167,14 @@ static struct callbackData _callback_data;
 
 void timerCallback(int sig) {
     (void) sig;
-#ifndef ADAPTIVE_FREQUENCY
-    if (_callback_data.block == 0) {
-        _callback_data.block = 1;
-#endif
-        int r;
-        do {
-            r = kill(_callback_data.tid, TRACEE_INTERRUPT_SIGNAL);
-        } while (r == -1 && errno == EAGAIN);
-        debug_printf("[%d] send %d\n", _callback_data.tid, TRACEE_INTERRUPT_SIGNAL);
-#ifndef ADAPTIVE_FREQUENCY
-    }
-#else
+    int r;
+    do {
+        r = kill(_callback_data.tid, TRACEE_INTERRUPT_SIGNAL);
+    } while (r == -1 && errno == EAGAIN);
+    debug_printf("[%d] send %d\n", _callback_data.tid, TRACEE_INTERRUPT_SIGNAL);
     clock_gettime(CLOCK_REALTIME, &_callback_data.lastInterrupt);
-#endif
 }
 
-#ifdef ADAPTIVE_FREQUENCY
 int pauseTimer(struct timerData *timer) {
     if (timer->active == 0)
         return 0;
@@ -241,7 +221,6 @@ int scheduleNextInterrupt(struct timerData *timer) {
         return 1;
     return 0;
 }
-#endif
 
 int startTimer(struct timerData *timer) {
     //If sampling interval is 0, no need for a timer
@@ -262,19 +241,6 @@ int startTimer(struct timerData *timer) {
         goto start_error;
     if (timer_create(CLOCK_REALTIME, NULL, &timer->timer) != 0)
         goto start_error;
-    
-#ifndef ADAPTIVE_FREQUENCY
-    timer->time.it_value.tv_sec = 0;
-    if (freq == 0.0) {
-        timer->time.it_value.tv_nsec = 0;
-    } else {
-        timer->time.it_value.tv_nsec = 1;
-    }
-    timer->time.it_interval = timer->samplingInterval;
-        
-    if (timer_settime(timer->timer, 0, &timer->time, NULL) != 0)
-        goto start_error;
-#endif
     
     timer->active = 1;
     return 0;
@@ -301,19 +267,19 @@ int main(int const argc, char **argv) {
     FILE *output = NULL;
     char **argsStart = NULL;
     char *pmuArg = NULL;
-    bool debugOutput = 0;
+    bool verboseOutput = 0;
     double samplingFrequency = 10000;
     
     static struct option const long_options[] =  {
         {"help",         no_argument, 0, 'h'},
-        {"debug",        no_argument, 0, 'd'},
+        {"verbose",      no_argument, 0, 'v'},
         {"pmu-arg",      required_argument, 0, 'p'},
         {"frequency",    required_argument, 0, 'f'},
         {"output",       required_argument, 0, 'o'},
         {0, 0, 0, 0}
     };
 
-    static char const * short_options = "hdf:o:p:";
+    static char const * short_options = "hvf:o:p:";
 
     while (1) {
         char *endptr;
@@ -331,7 +297,7 @@ int main(int const argc, char **argv) {
             case 0:
                 break;
             case 'h':
-                help(0, NULL);
+                help(argv[0],0, NULL);
                 return 0;
             case 'p':
                 aLen = strlen(optarg);
@@ -342,7 +308,7 @@ int main(int const argc, char **argv) {
             case 'f':
                 samplingFrequency = strtod(optarg, &endptr);
                 if (endptr == optarg) {
-                    help(c, optarg);
+                    help(argv[0], c, optarg);
                     return 1;
                 }
 
@@ -350,17 +316,17 @@ int main(int const argc, char **argv) {
             case 'o':
                 len = strlen(optarg);
                 if (strlen(optarg) == 0) {
-                    help(c ,optarg);
+                    help(argv[0], c ,optarg);
                     return 1;
                 }
                 output = fopen(optarg, "w+");
                 if (output == NULL) {
-                    help(c, optarg);
+                    help(argv[0], c, optarg);
                     return 1;
                 }
                 break;
-           case 'd':
-                debugOutput = true;
+           case 'v':
+                verboseOutput = true;
                 break;
             default:
                 abort();
@@ -375,7 +341,7 @@ int main(int const argc, char **argv) {
     }
 
     if (argsStart == NULL) {
-        help(' ', "no command specified");
+        help(argv[0], ' ', "no command specified");
         return 1;
     }
 
@@ -383,7 +349,8 @@ int main(int const argc, char **argv) {
     int ret = 0; // this application return code
     long rp = 0; // ptrace return code
 
-   if (pmuInit(pmuArg) != 0) {
+    //Init PMU
+    if (pmuInit(pmuArg) != 0) {
         goto pmuError;
     }
     if (pmuArg != NULL) {
@@ -394,7 +361,8 @@ int main(int const argc, char **argv) {
     pid_t intrTarget = 0;
     int intrStatus = 0;
     struct VMMaps processMap = {};
-        
+
+    //Fork Process
     do {
         samplingTarget = fork();
     } while (samplingTarget == -1 && errno == EAGAIN);
@@ -404,6 +372,7 @@ int main(int const argc, char **argv) {
         ret = 1; goto exit;
     }
 
+    //Enable PTRACE of forked process and replace it with target application
     if (samplingTarget == 0) {
         if (ptrace(PTRACE_TRACEME, NULL, NULL, NULL) == -1) {
             fprintf(stderr,"ptrace traceme failed!\n");
@@ -419,27 +388,34 @@ int main(int const argc, char **argv) {
         }
     }
 
+    //Saving the sampling target as root process
     tasks.root = samplingTarget;
 
+    //PTRACE sends SIGTRACE to a newly ptraced process (in this case our target),
+    //which we are waiting for
     do {
         intrTarget = waitpid(samplingTarget, &intrStatus, __WALL);
     } while (intrTarget == -1 && errno == EINTR);
-    
+
+    //If something went wrong, break here
     if (WIFEXITED(intrStatus)) {
         fprintf(stderr,"ERROR: unexpected process termination\n");
         ret = 2; goto exit;
     }
 
+    //The PID of the target must matched with that one which we waited for
     if (samplingTarget != intrTarget) {
         fprintf(stderr, "ERROR: unexpected pid stopped\n");
         ret = 2; goto exitWithTarget;
     }
 
+    //Set PTRACE options to trace thread creation, target kills and exits
     if (ptrace(PTRACE_SETOPTIONS, samplingTarget, NULL, PTRACE_O_TRACECLONE | PTRACE_O_TRACEEXIT | PTRACE_O_EXITKILL) == -1) {
         fprintf(stderr, "ERROR: Could not set ptrace options!\n");
         ret = 1; goto exitWithTarget;
     }
 
+    //Check if we can read the process virtual memory maps
     struct VMMaps targetMap = {};
     targetMap = getProcessVMMaps(samplingTarget, 1);
     if (targetMap.count == 0) {
@@ -453,54 +429,62 @@ int main(int const argc, char **argv) {
     }
 #endif
 
+    //Leave space for the profile header
     if (output != NULL) {
         // Leave place for Magic Number, Wall Time, Time, Samples, VMMap Count
         fseek(output, 2 * sizeof(uint32_t) + 3 * sizeof(uint64_t), SEEK_SET);
     }
 
+    //Necessary structs for reading out the programm counter
     static struct user_regs_struct regs = {};
 #ifdef __aarch64__
     static struct iovec rvec = { .iov_base = &regs, .iov_len = sizeof(regs) };
 #endif
-    
+
+    //Setting the target pid for the timer callback to send signals to
     _callback_data.tid = samplingTarget;
+    //Add the target in our task structure, which will keep track of it and its threads
     if (addTask(samplingTarget)) {
         fprintf(stderr, "ERROR: could not add %d internal task structure\n", samplingTarget);
         goto exitWithTarget;
     }
 
-    struct timerData timer = {};
+
+    //statistics
     uint64_t samples = 0;
     uint64_t interrupts = 0;
+    //timer data
+    struct timerData timer = {};
     struct timespec timeDiff = {};
     struct timespec currentTime = {};
-    
-    frequencyToTimespec(&timer.samplingInterval, samplingFrequency);
 
-#ifndef ADAPTIVE_FREQUENCY
-    _callback_data.block = 0;
-#endif
+    frequencyToTimespec(&timer.samplingInterval, samplingFrequency);
 
     struct timespec samplerStartTime = {};
     clock_gettime(CLOCK_REALTIME, &samplerStartTime);
 
-#ifdef ESTIMATE_LATENCY    
-    clock_t latencyCpuTime = clock();
-#else
-    struct timespec groupStopStartTime = {};
-    struct timespec totalLatencyWallTime = {};
-#endif
-    pmuRead();
+    //struct timespec groupStopStartTime = {};
+    //struct timespec totalLatencyWallTime = {};
+    clock_t latencyCpuStartTime = clock();
+    struct timespec sampleWallTime = {};
+    clock_gettime(CLOCK_REALTIME, &sampleWallTime);
+    double samplePMUValue = pmuRead();
+    uint64_t sampleTime = timespecToMicroseconds(&sampleWallTime);
+
+    if (output != NULL ) {
+        const uint32_t zero = 0;
+        fwrite((void *) &sampleTime, sizeof(uint64_t), 1, output);
+        fwrite((void *) &samplePMUValue, sizeof(double), 1, output);
+        fwrite((void *) &zero, sizeof(uint32_t), 1, output);
+    }
 
     if (startTimer(&timer) != 0) {
         fprintf(stderr, "ERROR: could not start sampling timer\n");
         goto exitWithTarget;
     }
 
-#ifdef ADAPTIVE_FREQUENCY
     // first sample as soon as possible
     scheduleInterruptNow(&timer);
-#endif
 
     long r;
     do {
@@ -577,22 +561,8 @@ int main(int const argc, char **argv) {
                     debug_printf("[%d] exit traced of root target\n", intrTarget)
                 } else if (signal == SIGTRAP && (status >> 16) == PTRACE_EVENT_CLONE) {
                     signal = 0;
-                    /*
-                      // Its nice to know this, but the way we are waiting for any child,
-                      // might first inform us about a new thread stopping before its parent
-                      // report the clone event. So detecting new threads if they are just
-                      // unknown is more reliable
-                      unsigned long eventMessage;
-                      if (ptrace(PTRACE_GETEVENTMSG, intrTarget, NULL, &eventMessage) == -1) {
-                          fprintf(stderr, "Could not retrieve ptrace event message\n");
-                          goto exitWithTarget;
-                      }
-                      debug_printf("[%d] child born %lu\n", intrTarget, eventMessage);
-                      addTask(eventMessage);
-                      PTRACE_CONTINUE(intrTarget, NULL);
-                    */
-                } else {
-                    debug_printf("[%d] not traced signal %d\n", intrTarget, signal);
+               } else {
+                    debug_printf("[%d] untraced signal %d\n", intrTarget, signal);
                     interrupts++;
                 }
             }
@@ -608,17 +578,16 @@ int main(int const argc, char **argv) {
                 debug_printf("[%d] continued with signal %d\n", intrTarget, signal);
             }
             
-#ifndef ESTIMATE_LATENCY
             //Measure time from group stop start, until samples are taken
             //not a perfect latency measurement, but real latency would need
             //a lot of time measurements, impacting latency itself
-            if (groupStop) 
-                clock_gettime(CLOCK_REALTIME, &groupStopStartTime);
-#endif
+            //if (groupStop)
+            //    clock_gettime(CLOCK_REALTIME, &groupStopStartTime);
         }
 
-        double current = pmuRead();
-        debug_printf("[sample] current: %f A\n", current);
+        clock_gettime(CLOCK_REALTIME, &sampleWallTime);
+        samplePMUValue = pmuRead();
+        debug_printf("[sample] PMU Value: %f\n", samplePMUValue);
 
         unsigned int i = 0;
         while (i < tasks.count) {
@@ -648,26 +617,22 @@ int main(int const argc, char **argv) {
             i++;
         }
 
-        if (output != NULL ) { //&& !aggregate) {
-            fwrite((void *) &current, sizeof(double), 1, output);
+        if (output != NULL ) {
+            sampleTime = timespecToMicroseconds(&sampleWallTime);
+            fwrite((void *) &sampleTime, sizeof(uint64_t), 1, output);
+            fwrite((void *) &samplePMUValue, sizeof(double), 1, output);
             fwrite((void *) &tasks.count, sizeof(uint32_t), 1, output);
             fwrite((void *) tasks.list, sizeof(struct task), tasks.count, output);
         }
-        
+       
         samples++;
         groupStop = false;
         
-#ifdef ADAPTIVE_FREQUENCY
         scheduleNextInterrupt(&timer);
-#else
-        _callback_data.block = 0;
-#endif
-   
-#ifndef ESTIMATE_LATENCY
-        clock_gettime(CLOCK_REALTIME, &currentTime);
-        timespecSub(&timeDiff, &currentTime, &groupStopStartTime);
-        timespecAddStore(&totalLatencyWallTime, &timeDiff);
-#endif
+
+        //clock_gettime(CLOCK_REALTIME, &currentTime);
+        //timespecSub(&timeDiff, &currentTime, &groupStopStartTime);
+        //timespecAddStore(&totalLatencyWallTime, &timeDiff);
         i = 0;
         while(i < tasks.count) {
             rp = ptrace(PTRACE_CONT, tasks.list[i].tid, NULL, NULL);
@@ -684,11 +649,7 @@ int main(int const argc, char **argv) {
 
  exitSampler: ; 
 
-#ifdef ESTIMATE_LATENCY
-    uint64_t totalWallLatencyUs = (clock() - latencyCpuTime) * 1000000 / CLOCKS_PER_SEC;
-#else
-    uint64_t totalWallLatencyUs = timespecToMicroseconds(&totalLatencyWallTime);
-#endif
+    uint64_t totalWallLatencyUs = (clock() - latencyCpuStartTime) * 1000000 / CLOCKS_PER_SEC;
 
     clock_gettime(CLOCK_REALTIME, &currentTime);
     timespecSub(&timeDiff, &currentTime, &samplerStartTime);
@@ -719,7 +680,7 @@ int main(int const argc, char **argv) {
 
     //Write Header -> Samples, Threads, Offset, sample interval (us)
     
-    if (debugOutput) {
+    if (verboseOutput) {
         printf("[DEBUG] time       : %10lu us (ideal), %10lu us (actual)\n", totalWallTimeUs - totalWallLatencyUs, totalWallTimeUs);
         printf("[DEBUG] interrupts : %10lu    (total), %10lu    (foreign) \n", interrupts + samples, interrupts );
         printf("[DEBUG] samples    : %10llu    (ideal), %10lu    (actual)  \n", (timespecToMicroseconds(&timer.samplingInterval) > 0) ? totalWallTimeUs / timespecToMicroseconds(&timer.samplingInterval) : 0, samples);

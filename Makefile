@@ -18,7 +18,7 @@ pmu/%.o : pmu/%.c
 	$(CROSS_COMPILE)$(CC) $(FLAGS) $(INCLUDES) $(DEFINES) -c $< -o $@
 
 sthem_repository:
-	[ -d sthem ] && { cd sthem; git pull; } || { git clone git@github.com:tulipp-eu/sthem; cd sthem; git checkout develop; }
+	[ -d sthem ] && { cd sthem; git pull; } || { git clone https://github.com/tulipp-eu/sthem; cd sthem; git checkout develop; }
 	grep -q "sthem" .gitignore || echo sthem >> .gitignore
 
 clean:

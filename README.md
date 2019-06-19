@@ -11,11 +11,10 @@ Options:
   -h, --help                shows help
 ```
 
-* Support for full profiles
-  * profiles contains pmu data, TID, PC and cpu-time for every sample and thread
-* all profiles contain execution time (wall), time spend in profiler (latency), number of samples and target VMMap
+* profiles contains Wall Time, PMU Data, threads for every sample and TID, PC and CPU Time for every thread
+* all profiles contain execution time (wall), time spent in profiler (latency), number of samples and target VMMap
 * output file is optional, if not specified no IO is generated
-* frequency is a target, actual reached frequency is displayed in debug output
+* frequency is a target, actual reached frequency is displayed in verbose output
 * threads are fully supported, **though fork, vfork and vclone is not supported**!
 * execl, execlp, execle, execv, execvp and execvpe are replacing the current process with new VMMaps and are therefore not supported!
 
@@ -30,8 +29,8 @@ Options:
 
 ```
 [ 4 bytes / uint32_t ] Magic Number
-[ 8 bytes / uint64_t ] Wall Time
-[ 8 bytes / uint64_t ] CPU Time (latency)
+[ 8 bytes / uint64_t ] Total Wall Time
+[ 8 bytes / uint64_t ] CPU Time of Sampler (latency)
 [ 8 bytes / uint64_t ] Number of Samples
 
 [ 4 bytes / uint32_t ] Number of VMMaps
@@ -44,18 +43,18 @@ VMMap{
 
 ### Full Profile
 
-* big and IO heavy
 * is written on every sample, does not add any IO buffer (apart from system file buffers)
 * frequency, number of threads and sampling time determines size
 
 ```
 Sample{
-    [ 8 bytes / double   ] Current
+    [ 8 bytes / uint64_t ] Wall Time (ms)
+    [ 8 bytes / double   ] PMU Value
     [ 4 bytes / uint32_t ] Number of Threads
     Thread{
         [ 4 bytes / uint32_t ] Thread ID
         [ 8 bytes / uint64_t ] PC
-        [ 8 bytes / uint64_t ] cputime
+        [ 8 bytes / uint64_t ] CPU Time (ns)
     } // Repeated "Number of Threads" times
 } // Repeated "Number of Samples" times
 ```
