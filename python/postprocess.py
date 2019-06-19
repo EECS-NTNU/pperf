@@ -141,7 +141,7 @@ for i in range(sampleCount):
 
     prevWallTimeMs = wallTimeMs
 
-print("Reading raw samples... finished!")
+print("\rReading raw samples... finished!")
 vmmaps = []
 for i in range(vmmapCount):
     try:

@@ -470,7 +470,7 @@ int main(int const argc, char **argv) {
     clock_gettime(CLOCK_REALTIME, &sampleWallTime);
     double samplePMUValue = pmuRead();
     uint64_t sampleTime = timespecToMicroseconds(&sampleWallTime);
-
+    samples++;
     if (output != NULL ) {
         const uint32_t zero = 0;
         fwrite((void *) &sampleTime, sizeof(uint64_t), 1, output);
