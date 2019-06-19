@@ -1,6 +1,7 @@
 #include "intrusiveProfiler.h"
 
 
+#define ESTIMATE_LATENCY
 
 #ifdef DEBUG
 #define debug_printf(...) fprintf(stderr, __VA_ARGS__);
@@ -463,9 +464,12 @@ int main(int const argc, char **argv) {
     struct timespec samplerStartTime = {};
     clock_gettime(CLOCK_REALTIME, &samplerStartTime);
 
-    //struct timespec groupStopStartTime = {};
-    //struct timespec totalLatencyWallTime = {};
+#ifndef ESTIMATE_LATENCY
+    struct timespec latencyStartTime = {};
+    struct timespec totalLatencyWallTime = {};
+#else
     clock_t latencyCpuStartTime = clock();
+#endif
     struct timespec sampleWallTime = {};
     clock_gettime(CLOCK_REALTIME, &sampleWallTime);
     double samplePMUValue = pmuRead();
@@ -537,6 +541,10 @@ int main(int const argc, char **argv) {
                 signal = SIGSTOP;
                 groupStop = true;
                 stopCount = 0;
+#ifndef ESTIMATE_LATENCY
+                clock_gettime(CLOCK_REALTIME, &latencyStartTime);
+#endif
+
             } else if (signal == SIGSTOP) {
                 signal = 0;
                 if (!taskExists(intrTarget)) {
@@ -578,11 +586,6 @@ int main(int const argc, char **argv) {
                 debug_printf("[%d] continued with signal %d\n", intrTarget, signal);
             }
             
-            //Measure time from group stop start, until samples are taken
-            //not a perfect latency measurement, but real latency would need
-            //a lot of time measurements, impacting latency itself
-            //if (groupStop)
-            //    clock_gettime(CLOCK_REALTIME, &groupStopStartTime);
         }
 
         clock_gettime(CLOCK_REALTIME, &sampleWallTime);
@@ -630,9 +633,11 @@ int main(int const argc, char **argv) {
         
         scheduleNextInterrupt(&timer);
 
-        //clock_gettime(CLOCK_REALTIME, &currentTime);
-        //timespecSub(&timeDiff, &currentTime, &groupStopStartTime);
-        //timespecAddStore(&totalLatencyWallTime, &timeDiff);
+#ifndef ESTIMATE_LATENCY
+        clock_gettime(CLOCK_REALTIME, &currentTime);
+        timespecSub(&timeDiff, &currentTime, &latencyStartTime);
+        timespecAddStore(&totalLatencyWallTime, &timeDiff);
+#endif
         i = 0;
         while(i < tasks.count) {
             rp = ptrace(PTRACE_CONT, tasks.list[i].tid, NULL, NULL);
@@ -648,8 +653,11 @@ int main(int const argc, char **argv) {
      } while(tasks.count > 0);
 
  exitSampler: ; 
-
+#ifndef ESTIMATE_LATENCY
+    uint64_t totalWallLatencyUs = timespecToMicroseconds(&totalLatencyWallTime);
+#else
     uint64_t totalWallLatencyUs = (clock() - latencyCpuStartTime) * 1000000 / CLOCKS_PER_SEC;
+#endif
 
     clock_gettime(CLOCK_REALTIME, &currentTime);
     timespecSub(&timeDiff, &currentTime, &samplerStartTime);

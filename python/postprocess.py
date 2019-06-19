@@ -109,7 +109,7 @@ profile['samplingTime'] = (wallTimeUs / 1000000.0)
 profile['latencyTime'] = (latencyTimeUs / 1000000.0)
 
 rawSamples = []
-prevWallTimeMs = None
+offsetWallTimeMs = None
 
 for i in range(sampleCount):
     if (i % 1000 == 0):
@@ -123,8 +123,8 @@ for i in range(sampleCount):
         print("\nUnexpected end of file!")
         sys.exit(1)
 
-    if (prevWallTimeMs is None):
-        prevWallTimeMs = wallTimeMs
+    if (offsetWallTimeMs is None):
+        offsetWallTimeMs = wallTimeMs
 
     if threadCount > 0:
         sample = []
@@ -137,9 +137,8 @@ for i in range(sampleCount):
                 sys.exit(1)
             sample.append([tid, pc, (cpuTimeNs / 1000000000.0)])
 
-        rawSamples.append([((wallTimeMs - prevWallTimeMs) / 1000000.0), pmuValue, sample])
+        rawSamples.append([((wallTimeMs - offsetWallTimeMs) / 1000000.0), pmuValue, sample])
 
-    prevWallTimeMs = wallTimeMs
 
 print("\rReading raw samples... finished!")
 vmmaps = []
