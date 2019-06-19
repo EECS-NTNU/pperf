@@ -471,17 +471,9 @@ int main(int const argc, char **argv) {
     clock_t latencyCpuStartTime = clock();
 #endif
     struct timespec sampleWallTime = {};
-    clock_gettime(CLOCK_REALTIME, &sampleWallTime);
     double samplePMUValue = pmuRead();
-    uint64_t sampleTime = timespecToMicroseconds(&sampleWallTime);
-    samples++;
-    if (output != NULL ) {
-        const uint32_t zero = 0;
-        fwrite((void *) &sampleTime, sizeof(uint64_t), 1, output);
-        fwrite((void *) &samplePMUValue, sizeof(double), 1, output);
-        fwrite((void *) &zero, sizeof(uint32_t), 1, output);
-    }
-
+    uint64_t sampleTime = 0;
+   
     if (startTimer(&timer) != 0) {
         fprintf(stderr, "ERROR: could not start sampling timer\n");
         goto exitWithTarget;

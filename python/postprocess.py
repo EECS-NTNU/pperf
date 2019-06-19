@@ -109,7 +109,6 @@ profile['samplingTime'] = (wallTimeUs / 1000000.0)
 profile['latencyTime'] = (latencyTimeUs / 1000000.0)
 
 rawSamples = []
-offsetWallTimeMs = None
 
 for i in range(sampleCount):
     if (i % 1000 == 0):
@@ -123,21 +122,17 @@ for i in range(sampleCount):
         print("\nUnexpected end of file!")
         sys.exit(1)
 
-    if (offsetWallTimeMs is None):
-        offsetWallTimeMs = wallTimeMs
+    sample = []
+    for j in range(threadCount):
+        try:
+            (tid, pc, cpuTimeNs, ) = struct.unpack_from(endianess + "IQQ", binProfile, binOffset)
+            binOffset += 4 + 8 + 8
+        except Exception as e:
+            print("Unexpected end of file!")
+            sys.exit(1)
+        sample.append([tid, pc, (cpuTimeNs / 1000000000.0)])
 
-    if threadCount > 0:
-        sample = []
-        for j in range(threadCount):
-            try:
-                (tid, pc, cpuTimeNs, ) = struct.unpack_from(endianess + "IQQ", binProfile, binOffset)
-                binOffset += 4 + 8 + 8
-            except Exception as e:
-                print("Unexpected end of file!")
-                sys.exit(1)
-            sample.append([tid, pc, (cpuTimeNs / 1000000000.0)])
-
-        rawSamples.append([((wallTimeMs - offsetWallTimeMs) / 1000000.0), pmuValue, sample])
+    rawSamples.append([(wallTimeMs / 1000000.0), pmuValue, sample])
 
 
 print("\rReading raw samples... finished!")
@@ -166,15 +161,21 @@ profile['target'] = sampleParser.binaries[0]['binary']
 
 i = 0
 prevThreadCpuTimes = {}
+prevSampleWallTime = None
 for sample in rawSamples:
     if (i % 1000 == 0):
         progress = int((i + 1) * 100 / sampleCount)
         print(f"Post processing... {progress}%\r", end="")
     i += 1
 
+    if prevSampleWallTime is None:
+        prevSampleWallTime = sample[0]
+
     processedSample = []
-    sampleWallTime = sample[0]
+    sampleWallTime = sample[0] - prevSampleWallTime
+    prevSampleWallTime = sample[0]
     samplePower = sample[1] * useVolts
+
     for thread in sample[2]:
         if not thread[0] in prevThreadCpuTimes:
             prevThreadCpuTimes[thread[0]] = thread[2]
