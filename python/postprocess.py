@@ -114,13 +114,13 @@ prevWallTimeMs = None
 for i in range(sampleCount):
     if (i % 1000 == 0):
         progress = int((i + 1) * 100 / sampleCount)
-        print(f"Reading raw samples... {progress}%\r", end="")
+        print(f"\rReading raw samples... {progress}%", end="")
 
     try:
         (wallTimeMs, pmuValue, threadCount, ) = struct.unpack_from(endianess + "QdI", binProfile, binOffset)
-        binOffset += 8 + 4
+        binOffset += 8 + 8 + 4
     except Exception as e:
-        print("Unexpected end of file!")
+        print("\nUnexpected end of file!")
         sys.exit(1)
 
     if (prevWallTimeMs is None):
