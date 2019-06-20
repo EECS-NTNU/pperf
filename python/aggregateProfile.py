@@ -23,10 +23,16 @@ parser.add_argument("-l", "--limit", help="limit output to % of energy/current",
 parser.add_argument("-t", "--table", help="output csv table")
 parser.add_argument("-p", "--plot", help="plotly html file")
 parser.add_argument("-o", "--output", help="output aggregated profile")
+parser.add_argument("--account-latency", action="store_true", help="substract latency")
+parser.add_argument("--use-wall-time", action="store_true", help="use sample wall time")
+parser.add_argument("--use-cpu-time", action="store_true", help="use cpu time (default)")
 parser.add_argument("-q", "--quiet", action="store_true", help="do not automatically open output file", default=False)
 
 
 args = parser.parse_args()
+
+if not args.use_cpu_time and not args.use_wall_time:
+    args.use_cpu_time = True
 
 if (args.limit is not 0 and (args.limit < 0 or args.limit > 1)):
     print("ERROR: limit is out of range")
@@ -49,6 +55,7 @@ if (max(aggregateKeys) > 5 or min(aggregateKeys) < 0):
     print("ERROR: aggregate keys are out of bounds (0-5)")
     sys.exit(1)
 
+
 aggregatedProfile = {
     'version': _aggregatedProfileVersion,
     'samples': 0,
@@ -58,7 +65,7 @@ aggregatedProfile = {
     'volts': 0,
     'target': False,
     'mean': len(args.profiles),
-    'aggreagted': True
+    'aggregated': False
 }
 
 meanFac = 1 / aggregatedProfile['mean']
@@ -67,14 +74,19 @@ avgSampleTime = 0
 
 i = 1
 for fileProfile in args.profiles:
-    print(f"Aggregate profile {i}/{len(args.profiles)}...\r", end="")
-    i += 1
-
     profile = {}
     if fileProfile.endswith(".bz2"):
         profile = pickle.load(bz2.BZ2File(fileProfile, mode="rb"))
     else:
         profile = pickle.load(open(fileProfile, mode="rb"))
+
+    if i == 1 and 'version' in profile and profile['version'] == _aggregatedProfileVersion and len(args.profiles) == 1:
+        print("Using aggregated profile")
+        aggregatedProfile = profile
+        break
+
+    print(f"Aggregate profile {i}/{len(args.profiles)}...\r", end="")
+    i += 1
 
     if 'version' not in profile or profile['version'] != _profileVersion:
         raise Exception(f"Incompatible profile version (required: {_profileVersion})")
@@ -92,15 +104,30 @@ for fileProfile in args.profiles:
     aggregatedProfile['samplingTime'] += profile['samplingTime'] * meanFac
     aggregatedProfile['samples'] += profile['samples'] * meanFac
     avgSampleTime = profile['samplingTime'] / profile['samples']
+    avgLatencyTime = profile['latencyTime'] / profile['samples']
 
     subAggregate = {}
     threadLocations = {}
+    prevSampleWallTime = None
     for sample in profile['profile']:
         # activeCores = min(len(sample[2]), len(useCpus))
+        if prevSampleWallTime is None:
+            prevSampleWallTime = sample[1]
 
+        sampleWallTime = sample[1] - prevSampleWallTime
+        prevSampleWallTime = sample[1]
         for thread in sample[2]:
             threadId = thread[0]
-            threadCpuTime = thread[1]
+            if args.use_cpu_time:
+                # Thread CPU Time
+                useSampleTime = thread[1]
+            else:
+                # Sample Wall Time
+                useSampleTime = sampleWallTime
+
+            if args.account_latency:
+                useSampleTime = max(useSampleTime - avgLatencyTime, 0.0)
+
             sampleData = sampleFormatter.getSample(thread[2])
 
             aggregateIndex = sampleFormatter.formatSample(sampleData, displayKeys=aggregateKeys)
@@ -109,16 +136,18 @@ for fileProfile in args.profiles:
 
             if aggregateIndex not in subAggregate:
                 subAggregate[aggregateIndex] = [
-                    threadCpuTime,  # total execution time
+                    useSampleTime,  # total execution time
                     1,
-                    sample[0] * threadCpuTime,  # energy (later power)
-                    sampleFormatter.sanitizeOutput(aggregateIndex, lStringStrip=aggregatedProfile['target'])  # label
+                    sample[0] * useSampleTime,  # energy (later power)
+                    sampleFormatter.sanitizeOutput(aggregateIndex, lStringStrip=aggregatedProfile['target']),  # label
+                    1
                 ]
             else:
-                subAggregate[aggregateIndex][0] += threadCpuTime
+                subAggregate[aggregateIndex][0] += useSampleTime
                 if threadLocations[threadId] != aggregateIndex:
                     subAggregate[aggregateIndex][1] += 1
-                subAggregate[aggregateIndex][2] += sample[0] * threadCpuTime
+                subAggregate[aggregateIndex][2] += sample[0] * useSampleTime
+                subAggregate[aggregateIndex][4] += 1
 
             threadLocations[threadId] = aggregateIndex
 
@@ -136,16 +165,22 @@ for fileProfile in args.profiles:
                 subAggregate[key][1] * meanFac,
                 0,
                 subAggregate[key][2] * meanFac,
-                subAggregate[key][3]
+                subAggregate[key][3],
+                subAggregate[key][4] * meanFac
+
             ]
 
     del subAggregate
 
-for key in aggregatedProfile['profile']:
-    time = aggregatedProfile['profile'][key][0]
-    energy = aggregatedProfile['profile'][key][3]
-    aggregatedProfile['profile'][key][2] = energy / time if time != 0 else 0
 
+# aggregated energy and time, turn it to power
+if 'aggregated' not in aggregatedProfile or aggregatedProfile['aggregated'] is False:
+    for key in aggregatedProfile['profile']:
+        time = aggregatedProfile['profile'][key][0]
+        energy = aggregatedProfile['profile'][key][3]
+        aggregatedProfile['profile'][key][2] = energy / time if time != 0 else 0
+
+    aggregatedProfile['aggregated'] = True
 
 avgLatencyTime = aggregatedProfile['latencyTime'] / aggregatedProfile['samples']
 avgSampleTime = aggregatedProfile['samplingTime'] / aggregatedProfile['samples']
@@ -159,11 +194,13 @@ execs = numpy.array(values[:, 1], dtype=float)
 powers = numpy.array(values[:, 2], dtype=float)
 energies = numpy.array(values[:, 3], dtype=float)
 aggregationLabel = values[:, 4]
+samples = numpy.array(values[:, 5], dtype=float)
 
 totalTime = numpy.sum(times)
 totalEnergy = numpy.sum(energies)
 totalPower = totalEnergy / totalTime if totalTime > 0 else 0
 totalExec = numpy.sum(execs)
+totalSamples = numpy.sum(samples)
 
 if args.limit is not 0:
     accumulate = 0.0
@@ -178,6 +215,7 @@ if args.limit is not 0:
             energies = energies[cutOff:]
             powers = powers[cutOff:]
             aggregationLabel = aggregationLabel[cutOff:]
+            samples = samples[cutOff:]
             break
 
 labels = [f"{x:.4f} s, {x * 1000/a:.3f} ms, {s:.2f} W" + f", {y * 100 / totalEnergy if totalEnergy > 0 else 0:.2f}%" for x, a, s, y in zip(times, execs, powers, energies)]
@@ -232,6 +270,7 @@ if (args.table or not args.quiet):
     execs = numpy.insert(execs[::-1], 0, totalExec)
     energies = numpy.insert(energies[::-1], 0, totalEnergy)
     powers = numpy.insert(powers[::-1], 0, totalPower)
+    samples = numpy.insert(samples[::-1], 0, totalSamples)
 
 
 if (args.table):
@@ -239,9 +278,9 @@ if (args.table):
         table = bz2.BZ2File.open(args.table, "w")
     else:
         table = open(args.table, "w")
-    table.write("function;time;power;energy\n")
-    for f, t, e, s, m in zip(aggregationLabel, times, execs, powers, energies):
-        table.write(f"{f};{t};{e},{s};{m}\n")
+    table.write("function;time;power;energy;samples\n")
+    for f, t, e, s, m, n in zip(aggregationLabel, times, execs, powers, energies, samples):
+        table.write(f"{f};{t};{e},{s};{m};{n}\n")
     table.close()
     print(f"CSV saved to {args.table}")
 
@@ -255,4 +294,5 @@ if (args.output):
 
 
 if (not args.quiet):
-    print(tabulate.tabulate(zip(aggregationLabel, times, execs, powers, energies), headers=['Function', 'Time [s]', 'Executions', 'Power [W]', 'Energy [J]']))
+    relativeSamples = [f"{x / totalSamples:.02f}" for x in samples]
+    print(tabulate.tabulate(zip(aggregationLabel, times, execs, powers, energies, samples, relativeSamples), headers=['Function', 'Time [s]', 'Executions', 'Power [W]', 'Energy [J]', 'Samples', '%']))
