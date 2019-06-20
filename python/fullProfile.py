@@ -106,7 +106,7 @@ if not args.no_threads:
                 threads.append(list.copy(threadNone))
                 threadDisplay.append(list.copy(threadNone))
 
-            cpuShare = threadSampleCpuTime / (sampleWallTime * activeCores)
+            cpuShare = (threadSampleCpuTime / (sampleWallTime * activeCores)) if sampleWallTime != 0 else 0
 
             threads[threadIndex][index] = threadIndex + 1
             threadDisplay[threadIndex][index] = sampleFormatter.sanitizeOutput(sampleFormatter.formatData(threadSample[2]), lStringStrip=profile['target']) + f", {cpuShare:.2f}"
