@@ -138,10 +138,11 @@ void help(char const *exec, char const opt, char const *optarg) {
     fprintf(out, "%s\n", pmuAbout());
     fprintf(out, "\n");
     fprintf(out, "Options:\n");
-    fprintf(out, "  -o, --output=<file>       write to file\n");
-    fprintf(out, "  -p, --pmu-arg=<pmu>       pmu argument\n");
-    fprintf(out, "  -f, --frequency=<hertz>   sampling frequency\n");
-    fprintf(out, "  -r, --rr=<priority>       set rr scheduler with priority\n");
+    fprintf(out, "  -o, --output <file>       write to file\n");
+    fprintf(out, "  -p, --pmu-arg <pmu>       pmu argument\n");
+    fprintf(out, "  -f, --frequency <hertz>   sampling frequency\n");
+    fprintf(out, "  --fifo <priority>           set fifo scheduler with priority\n");
+    fprintf(out, "  --rr <priority>           set rr scheduler with priority\n");
     fprintf(out, "  -v, --verbose             verbsoe output at the end\n");
     fprintf(out, "  -h, --help                shows help\n");
     fprintf(out, "\n");
@@ -271,12 +272,14 @@ int main(int const argc, char **argv) {
     char *pmuArg = NULL;
     bool verboseOutput = 0;
     double samplingFrequency = 10000;
-    int rr = -1;
+    int rr = 0;
+    int fifo = 0;
     
     static struct option const long_options[] =  {
         {"help",         no_argument, 0, 'h'},
         {"verbose",      no_argument, 0, 'v'},
         {"pmu-arg",      required_argument, 0, 'p'},
+        {"fifo",         required_argument, 0,  'x'},
         {"rr",           required_argument, 0, 'r'},
         {"frequency",    required_argument, 0, 'f'},
         {"output",       required_argument, 0, 'o'},
@@ -308,6 +311,13 @@ int main(int const argc, char **argv) {
             pmuArg = malloc((aLen + 1) * sizeof(char));
             memset(pmuArg, '\0', aLen + 1);
             strncpy(pmuArg, optarg, aLen);
+            break;
+        case 'x':
+            fifo = strtol(optarg, &endptr, 10);
+            if (endptr == optarg || fifo < 1 || fifo > 99) {
+                help(argv[0], c, optarg);
+                return 1;
+            }
             break;
         case 'r':
             rr = strtol(optarg, &endptr, 10);
@@ -356,6 +366,16 @@ int main(int const argc, char **argv) {
         return 1;
     }
 
+    if (rr != 0)
+        fifo = 0;
+
+    int prio = rr + fifo;
+    struct sched_param param = {};
+    int useSched = SCHED_RR;
+    param.sched_priority = prio;
+    if (fifo != 0) {
+        useSched = SCHED_FIFO;
+    }
 
     int ret = 0; // this application return code
     long rp = 0; // ptrace return code
@@ -373,10 +393,8 @@ int main(int const argc, char **argv) {
     int intrStatus = 0;
     struct VMMaps processMap = {};
 
-    if (rr != -1) {
-        struct sched_param param = {};
-        param.sched_priority = rr;
-        if (sched_setscheduler(0, SCHED_RR, &param) != 0) {
+    if (prio != 0) {
+        if (sched_setscheduler(0, useSched, &param) != 0) {
             fprintf(stderr, "ERROR: (%d) could not set SCHED_RR with priority %d\n", errno, rr);
             goto exitWithTarget;
         }
@@ -397,10 +415,8 @@ int main(int const argc, char **argv) {
             fprintf(stderr,"ptrace traceme failed!\n");
             return 1;
         }
-        if (rr != -1) {
-            struct sched_param param = {};
-            param.sched_priority = rr;
-            if (sched_setscheduler(0, SCHED_RR, &param) != 0) {
+        if (prio != 0) {
+            if (sched_setscheduler(0, useSched, &param) != 0) {
                 fprintf(stderr, "ERROR: (%d) could not set SCHED_RR with priority %d\n", errno, rr);
                 goto exitWithTarget;
             }
