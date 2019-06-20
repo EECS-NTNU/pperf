@@ -376,7 +376,10 @@ int main(int const argc, char **argv) {
     if (rr != -1) {
         struct sched_param param = {};
         param.sched_priority = rr;
-        sched_setscheduler(0, SCHED_RR, &param);
+        if (sched_setscheduler(0, SCHED_RR, &param) != 0) {
+            fprintf(stderr, "ERROR: (%d) could not set SCHED_RR with priority %d\n", errno, rr);
+            goto exitWithTarget;
+        }
     }
     //Fork Process
     do {
@@ -397,7 +400,10 @@ int main(int const argc, char **argv) {
         if (rr != -1) {
             struct sched_param param = {};
             param.sched_priority = rr;
-            sched_setscheduler(0, SCHED_RR, &param);
+            if (sched_setscheduler(0, SCHED_RR, &param) != 0) {
+                fprintf(stderr, "ERROR: (%d) could not set SCHED_RR with priority %d\n", errno, rr);
+                goto exitWithTarget;
+            }
         }
         if (execvp(argsStart[0], argsStart) != 0) {
             fprintf(stderr, "ERROR: failed to execute");
