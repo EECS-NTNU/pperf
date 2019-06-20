@@ -141,6 +141,7 @@ void help(char const *exec, char const opt, char const *optarg) {
     fprintf(out, "  -o, --output=<file>       write to file\n");
     fprintf(out, "  -p, --pmu-arg=<pmu>       pmu argument\n");
     fprintf(out, "  -f, --frequency=<hertz>   sampling frequency\n");
+    fprintf(out, "  -r, --rr=<priority>       set rr scheduler with priority\n");
     fprintf(out, "  -v, --verbose             verbsoe output at the end\n");
     fprintf(out, "  -h, --help                shows help\n");
     fprintf(out, "\n");
@@ -270,17 +271,19 @@ int main(int const argc, char **argv) {
     char *pmuArg = NULL;
     bool verboseOutput = 0;
     double samplingFrequency = 10000;
+    int rr = -1;
     
     static struct option const long_options[] =  {
         {"help",         no_argument, 0, 'h'},
         {"verbose",      no_argument, 0, 'v'},
         {"pmu-arg",      required_argument, 0, 'p'},
+        {"rr",           required_argument, 0, 'r'},
         {"frequency",    required_argument, 0, 'f'},
         {"output",       required_argument, 0, 'o'},
         {0, 0, 0, 0}
     };
 
-    static char const * short_options = "hvf:o:p:";
+    static char const * short_options = "hvf:o:p:r:";
 
     while (1) {
         char *endptr;
@@ -288,49 +291,56 @@ int main(int const argc, char **argv) {
         int option_index = 0;
         size_t len = 0;
         unsigned int aLen;
-        
+
         c = getopt_long (argc, argv, short_options, long_options, &option_index);
         if (c == -1) {
             break;
         }
 
         switch (c) {
-            case 0:
-                break;
-            case 'h':
-                help(argv[0],0, NULL);
-                return 0;
-            case 'p':
-                aLen = strlen(optarg);
-                pmuArg = malloc((aLen + 1) * sizeof(char));
-                memset(pmuArg, '\0', aLen + 1);
-                strncpy(pmuArg, optarg, aLen);
-                break;
-            case 'f':
-                samplingFrequency = strtod(optarg, &endptr);
-                if (endptr == optarg) {
-                    help(argv[0], c, optarg);
-                    return 1;
-                }
+        case 0:
+            break;
+        case 'h':
+            help(argv[0],0, NULL);
+            return 0;
+        case 'p':
+            aLen = strlen(optarg);
+            pmuArg = malloc((aLen + 1) * sizeof(char));
+            memset(pmuArg, '\0', aLen + 1);
+            strncpy(pmuArg, optarg, aLen);
+            break;
+        case 'r':
+            rr = strtol(optarg, &endptr, 10);
+            if (endptr == optarg || rr < 1 || rr > 99) {
+                help(argv[0], c, optarg);
+                return 1;
+            }
+            break;
+        case 'f':
+            samplingFrequency = strtod(optarg, &endptr);
+            if (endptr == optarg) {
+                help(argv[0], c, optarg);
+                return 1;
+            }
 
-                break;
-            case 'o':
-                len = strlen(optarg);
-                if (strlen(optarg) == 0) {
-                    help(argv[0], c ,optarg);
-                    return 1;
-                }
-                output = fopen(optarg, "w+");
-                if (output == NULL) {
-                    help(argv[0], c, optarg);
-                    return 1;
-                }
-                break;
-           case 'v':
-                verboseOutput = true;
-                break;
-            default:
-                abort();
+            break;
+        case 'o':
+            len = strlen(optarg);
+            if (strlen(optarg) == 0) {
+                help(argv[0], c ,optarg);
+                return 1;
+            }
+            output = fopen(optarg, "w+");
+            if (output == NULL) {
+                help(argv[0], c, optarg);
+                return 1;
+            }
+            break;
+        case 'v':
+            verboseOutput = true;
+            break;
+        default:
+            abort();
         }
     }
 
@@ -363,6 +373,11 @@ int main(int const argc, char **argv) {
     int intrStatus = 0;
     struct VMMaps processMap = {};
 
+    if (rr != -1) {
+        struct sched_param param = {};
+        param.sched_priority = rr;
+        sched_setscheduler(0, SCHED_RR, &param);
+    }
     //Fork Process
     do {
         samplingTarget = fork();
@@ -378,6 +393,11 @@ int main(int const argc, char **argv) {
         if (ptrace(PTRACE_TRACEME, NULL, NULL, NULL) == -1) {
             fprintf(stderr,"ptrace traceme failed!\n");
             return 1;
+        }
+        if (rr != -1) {
+            struct sched_param param = {};
+            param.sched_priority = rr;
+            sched_setscheduler(0, SCHED_RR, &param);
         }
         if (execvp(argsStart[0], argsStart) != 0) {
             fprintf(stderr, "ERROR: failed to execute");

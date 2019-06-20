@@ -14,6 +14,7 @@
 #include <sys/user.h>
 #include <spawn.h>
 #include <getopt.h>
+#include <sched.h>
 
 #include <elf.h>
 #include <sys/uio.h>
