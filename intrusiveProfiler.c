@@ -395,7 +395,7 @@ int main(int const argc, char **argv) {
 
     if (prio != 0) {
         if (sched_setscheduler(0, useSched, &param) != 0) {
-            fprintf(stderr, "ERROR: (%d) could not set SCHED_RR with priority %d\n", errno, rr);
+            fprintf(stderr, "ERROR: (%d) could not set scheduler %d with priority %d\n", errno, useSched, prio);
             goto exitWithTarget;
         }
     }
@@ -417,7 +417,7 @@ int main(int const argc, char **argv) {
         }
         if (prio != 0) {
             if (sched_setscheduler(0, useSched, &param) != 0) {
-                fprintf(stderr, "ERROR: (%d) could not set SCHED_RR with priority %d\n", errno, rr);
+                fprintf(stderr, "ERROR: (%d) could not set scheduler %d with priority %d\n", errno, useSched, prio);
                 goto exitWithTarget;
             }
         }
