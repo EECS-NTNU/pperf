@@ -1,6 +1,9 @@
 #ifndef __INTRUSIVEPROFILER_H_
 #define __INTRUSIVEPROFILER_H_
 
+#define _GNU_SOURCE
+
+
 #include <stdio.h>
 #include <signal.h>
 #include <stdlib.h>
@@ -19,6 +22,7 @@
 #include <elf.h>
 #include <sys/uio.h>
 #include <sys/ptrace.h>
+#include <sys/sysinfo.h>
 
 #include <time.h>
 #include <sys/time.h>

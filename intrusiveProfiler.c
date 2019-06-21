@@ -1,7 +1,6 @@
 #include "intrusiveProfiler.h"
 
-
-#define ESTIMATE_LATENCY
+//#define ESTIMATE_LATENCY
 
 #ifdef DEBUG
 #define debug_printf(...) fprintf(stderr, __VA_ARGS__);
@@ -141,8 +140,9 @@ void help(char const *exec, char const opt, char const *optarg) {
     fprintf(out, "  -o, --output <file>       write to file\n");
     fprintf(out, "  -p, --pmu-arg <pmu>       pmu argument\n");
     fprintf(out, "  -f, --frequency <hertz>   sampling frequency\n");
-    fprintf(out, "  --fifo <priority>           set fifo scheduler with priority\n");
+    fprintf(out, "  --fifo <priority>         set fifo scheduler with priority\n");
     fprintf(out, "  --rr <priority>           set rr scheduler with priority\n");
+    fprintf(out, "  --core-isolation          sample on isolated core\n");
     fprintf(out, "  -v, --verbose             verbsoe output at the end\n");
     fprintf(out, "  -h, --help                shows help\n");
     fprintf(out, "\n");
@@ -271,18 +271,20 @@ int main(int const argc, char **argv) {
     char **argsStart = NULL;
     char *pmuArg = NULL;
     bool verboseOutput = 0;
+    bool coreIsolation = 0;
     double samplingFrequency = 10000;
     int rr = 0;
     int fifo = 0;
     
     static struct option const long_options[] =  {
-        {"help",         no_argument, 0, 'h'},
-        {"verbose",      no_argument, 0, 'v'},
-        {"pmu-arg",      required_argument, 0, 'p'},
-        {"fifo",         required_argument, 0,  'x'},
-        {"rr",           required_argument, 0, 'r'},
-        {"frequency",    required_argument, 0, 'f'},
-        {"output",       required_argument, 0, 'o'},
+        {"help",           no_argument,       0, 'h'},
+        {"verbose",        no_argument,       0, 'v'},
+        {"core-isolation", no_argument,       0, 'i'},
+        {"pmu-arg",        required_argument, 0, 'p'},
+        {"fifo",           required_argument, 0, 'x'},
+        {"rr",             required_argument, 0, 'r'},
+        {"frequency",      required_argument, 0, 'f'},
+        {"output",         required_argument, 0, 'o'},
         {0, 0, 0, 0}
     };
 
@@ -346,6 +348,9 @@ int main(int const argc, char **argv) {
                 return 1;
             }
             break;
+        case 'i':
+            coreIsolation = true;
+            break;
         case 'v':
             verboseOutput = true;
             break;
@@ -393,12 +398,33 @@ int main(int const argc, char **argv) {
     int intrStatus = 0;
     struct VMMaps processMap = {};
 
+    //Set scheduler if one was chosen
     if (prio != 0) {
         if (sched_setscheduler(0, useSched, &param) != 0) {
             fprintf(stderr, "ERROR: (%d) could not set scheduler %d with priority %d\n", errno, useSched, prio);
-            goto exitWithTarget;
+            ret = 1; goto exit;
         }
     }
+    //Core isolation feature
+    if (coreIsolation) {
+       long const nCores = sysconf(_SC_NPROCESSORS_ONLN);
+       if (nCores == 1 && verboseOutput) {
+           fprintf(stdout, "[VERBOSE] CPU isolation does not work on a single core system\n");
+       }
+       if (nCores > 0) {
+           cpu_set_t  mask;
+           CPU_ZERO(&mask);
+           CPU_SET(nCores - 1, &mask);
+           if (sched_setaffinity(0, sizeof(mask), &mask) == -1) {
+               fprintf(stderr, "ERROR: could not set cpu mask for sampler\n");
+               ret = 1; goto exit;
+           }
+       } else {
+           fprintf(stderr, "ERROR: no online cpu cores were detected\n");
+           ret = 1; goto exit;
+       }
+    }
+
     //Fork Process
     do {
         samplingTarget = fork();
@@ -411,15 +437,32 @@ int main(int const argc, char **argv) {
 
     //Enable PTRACE of forked process and replace it with target application
     if (samplingTarget == 0) {
-        if (ptrace(PTRACE_TRACEME, NULL, NULL, NULL) == -1) {
-            fprintf(stderr,"ptrace traceme failed!\n");
-            return 1;
-        }
+        //Set scheduler for sampling target
         if (prio != 0) {
             if (sched_setscheduler(0, useSched, &param) != 0) {
                 fprintf(stderr, "ERROR: (%d) could not set scheduler %d with priority %d\n", errno, useSched, prio);
-                goto exitWithTarget;
+                return 1;
             }
+        }
+        //Core isolation feature
+        if (coreIsolation) {
+            long const nCores = sysconf(_SC_NPROCESSORS_ONLN);
+            if (nCores > 1) {
+                cpu_set_t  mask;
+                CPU_ZERO(&mask);
+                for (long i = 0; i < nCores - 1; i++) {
+                    CPU_SET(i, &mask);
+                }
+                if (sched_setaffinity(0, sizeof(mask), &mask) == -1) {
+                    fprintf(stderr, "ERROR: could not set cpu mask for target\n");
+                    return 1;
+                }
+            }
+        }
+
+        if (ptrace(PTRACE_TRACEME, NULL, NULL, NULL) == -1) {
+            fprintf(stderr,"ERROR: ptrace traceme failed!\n");
+            return 1;
         }
         if (execvp(argsStart[0], argsStart) != 0) {
             fprintf(stderr, "ERROR: failed to execute");
@@ -489,7 +532,7 @@ int main(int const argc, char **argv) {
     //Add the target in our task structure, which will keep track of it and its threads
     if (addTask(samplingTarget)) {
         fprintf(stderr, "ERROR: could not add %d internal task structure\n", samplingTarget);
-        goto exitWithTarget;
+        ret = 1; goto exitWithTarget;
     }
 
 
@@ -518,7 +561,7 @@ int main(int const argc, char **argv) {
    
     if (startTimer(&timer) != 0) {
         fprintf(stderr, "ERROR: could not start sampling timer\n");
-        goto exitWithTarget;
+        ret = 1; goto exitWithTarget;
     }
 
     // first sample as soon as possible
@@ -551,7 +594,7 @@ int main(int const argc, char **argv) {
                 } else {
                     if (removeTask(intrTarget)) {
                         fprintf(stderr, "ERROR: could not remove task %d from internal structure\n", intrTarget);
-                        goto exitWithTarget;
+                        ret = 1; goto exitWithTarget;
                     }
                     debug_printf("[%d] tracee died\n", intrTarget);
                     if (groupStop && stopCount >= tasks.count) {
@@ -565,7 +608,7 @@ int main(int const argc, char **argv) {
 
             if (!WIFSTOPPED(status)) {
                 fprintf(stderr, "unexpected process state of tid %d\n", intrTarget);
-                goto exitWithTarget;
+                ret = 1; goto exitWithTarget;
             }
 
             signal = WSTOPSIG(status);
@@ -585,7 +628,7 @@ int main(int const argc, char **argv) {
                     debug_printf("[%d] new child detected\n", intrTarget);
                     if (addTask(intrTarget)) {
                         fprintf(stderr, "ERROR: could not add task %d to internal structure\n", intrTarget);
-                        goto exitWithTarget;
+                        ret = 1; goto exitWithTarget;
                     }
                 }
                 if (groupStop) {
@@ -614,7 +657,7 @@ int main(int const argc, char **argv) {
                 debug_printf("[%d] death on ptrace cont\n", intrTarget);
                 if (removeTask(intrTarget)) {
                     fprintf(stderr, "ERROR: could not remove task %d from internal structure\n", intrTarget);
-                    goto exitWithTarget;
+                    ret = 1; goto exitWithTarget;
                 }
             } else {
                 debug_printf("[%d] continued with signal %d\n", intrTarget, signal);
@@ -637,7 +680,7 @@ int main(int const argc, char **argv) {
                 debug_printf("[%d] death on ptrace regs\n", tasks.list[i].tid);
                 if (removeTaskIndex(i)) {
                     fprintf(stderr, "ERROR: could not remove task %d from internal structure\n", tasks.list[i].tid);
-                    goto exitWithTarget;
+                    ret = 1; goto exitWithTarget;
                 }
                 continue;
             }
@@ -648,7 +691,7 @@ int main(int const argc, char **argv) {
 #endif
             if (getCPUTimeFromSchedstat(tasks.schedstats[i], &tasks.list[i].cputime)) {
                 fprintf(stderr, "ERROR: could not read cputime of tid %d\n", tasks.list[i].tid);
-                goto exitWithTarget;
+                ret = 1; goto exitWithTarget;
             }
             debug_printf("[%d] pc: 0x%lx, cputime: %lu\n", tasks.list[i].tid, tasks.list[i].pc, tasks.list[i].cputime);
             i++;
@@ -679,7 +722,7 @@ int main(int const argc, char **argv) {
                 debug_printf("[%d] death on ptrace cont after sample\n", tasks.list[i].tid);
                 if (removeTaskIndex(i)) {
                     fprintf(stderr, "ERROR: could not remove task %d from internal structure\n", tasks.list[i].tid);
-                    goto exitWithTarget;
+                    ret = 1; goto exitWithTarget;
                 }
             }
             i++;
@@ -723,12 +766,11 @@ int main(int const argc, char **argv) {
     //Write Header -> Samples, Threads, Offset, sample interval (us)
     
     if (verboseOutput) {
-        printf("[DEBUG] time       : %10lu us (ideal), %10lu us (actual)\n", totalWallTimeUs - totalWallLatencyUs, totalWallTimeUs);
-        printf("[DEBUG] interrupts : %10lu    (total), %10lu    (foreign) \n", interrupts + samples, interrupts );
-        printf("[DEBUG] samples    : %10llu    (ideal), %10lu    (actual)  \n", (timespecToMicroseconds(&timer.samplingInterval) > 0) ? totalWallTimeUs / timespecToMicroseconds(&timer.samplingInterval) : 0, samples);
-        printf("[DEBUG] latency    : %10lu us (total), %10lu us (sample)\n", totalWallLatencyUs, (samples > 0) ? totalWallLatencyUs / samples : 0);
-        
-        printf("[DEBUG] frequency  : %10.2f Hz (ideal), %10.2f Hz (actual)\n", samplingFrequency, (samples > 0) ? 1000000.0 / ((double) totalWallTimeUs / samples) : 0);
+        printf("[VERBOSE] time       : %10lu us (ideal), %10lu us (actual)\n", totalWallTimeUs - totalWallLatencyUs, totalWallTimeUs);
+        printf("[VERBOSE] interrupts : %10lu    (total), %10lu    (foreign) \n", interrupts + samples, interrupts );
+        printf("[VERBOSE] samples    : %10llu    (ideal), %10lu    (actual)  \n", (timespecToMicroseconds(&timer.samplingInterval) > 0) ? totalWallTimeUs / timespecToMicroseconds(&timer.samplingInterval) : 0, samples);
+        printf("[VERBOSE] latency    : %10lu us (total), %10lu us (sample)\n", totalWallLatencyUs, (samples > 0) ? totalWallLatencyUs / samples : 0);
+        printf("[VERBOSE] frequency  : %10.2f Hz (ideal), %10.2f Hz (actual)\n", samplingFrequency, (samples > 0) ? 1000000.0 / ((double) totalWallTimeUs / samples) : 0);
     }
     ret = 0; goto exit;
 
