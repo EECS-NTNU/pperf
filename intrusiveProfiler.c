@@ -1,6 +1,8 @@
 #include "intrusiveProfiler.h"
 
 //#define ESTIMATE_LATENCY
+//#define PC_ONLY
+
 
 #ifdef DEBUG
 #define debug_printf(...) fprintf(stderr, __VA_ARGS__);
@@ -32,6 +34,9 @@ struct task {
 } __attribute__((packed));
 
 int getCPUTimeFromSchedstat(FILE *schedstat, uint64_t *cputime) {
+#ifdef PC_ONLY
+    return 0;
+#endif
     if (freopen(NULL, "r", schedstat) == NULL)
         return 1;
     if (fscanf(schedstat, "%lu", cputime) == 1)
@@ -66,13 +71,13 @@ int addTask(pid_t const task) {
             return 1;
     }
     snprintf(schedfile, 1024, "/proc/%d/task/%d/schedstat", tasks.root, task);
-    tasks.list[tasks.count].tid = task;
-    tasks.list[tasks.count].pc = 0;
     tasks.schedstats[tasks.count] = fopen(schedfile, "r");
     if (tasks.schedstats[tasks.count] == NULL) {
         debug_printf("[DEBUG] Could not open %s\n", schedfile);
         return 1;
     }
+    tasks.list[tasks.count].tid = task;
+    tasks.list[tasks.count].pc = 0;
     tasks.count++;
     return 0;
 }
@@ -662,10 +667,11 @@ int main(int const argc, char **argv) {
             }
             
         }
-
+#ifndef PC_ONLY
         clock_gettime(CLOCK_REALTIME, &sampleWallTime);
         samplePMUValue = pmuRead();
         debug_printf("[sample] PMU Value: %f\n", samplePMUValue);
+#endif
 
         unsigned int i = 0;
         while (i < tasks.count) {
@@ -693,7 +699,9 @@ int main(int const argc, char **argv) {
         }
 
         if (output != NULL ) {
+#ifndef PC_ONLY
             sampleTime = timespecToMicroseconds(&sampleWallTime);
+#endif
             fwrite((void *) &sampleTime, sizeof(uint64_t), 1, output);
             fwrite((void *) &samplePMUValue, sizeof(double), 1, output);
             fwrite((void *) &tasks.count, sizeof(uint32_t), 1, output);
