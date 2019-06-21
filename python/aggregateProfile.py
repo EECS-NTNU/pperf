@@ -12,9 +12,6 @@ import tabulate
 
 import profileLib
 
-_profileVersion = "0.3"
-_aggregatedProfileVersion = "a0.4"
-
 parser = argparse.ArgumentParser(description="Visualize profiles from intrvelf sampler.")
 parser.add_argument("profiles", help="postprocessed profiles from intrvelf", nargs="+")
 parser.add_argument("-a", "--aggregate-keys", help="list of aggregation and display keys", default="1,3")
@@ -57,7 +54,7 @@ if (max(aggregateKeys) > 5 or min(aggregateKeys) < 0):
 
 
 aggregatedProfile = {
-    'version': _aggregatedProfileVersion,
+    'version': profileLib.aggProfileVersion,
     'samples': 0,
     'samplingTime': 0,
     'latencyTime': 0,
@@ -80,16 +77,15 @@ for fileProfile in args.profiles:
     else:
         profile = pickle.load(open(fileProfile, mode="rb"))
 
-    if i == 1 and 'version' in profile and profile['version'] == _aggregatedProfileVersion and len(args.profiles) == 1:
-        print("Using aggregated profile")
+    if i == 1 and 'version' in profile and profile['version'] == profileLib.aggProfileVersion and len(args.profiles) == 1:
         aggregatedProfile = profile
         break
 
     print(f"Aggregate profile {i}/{len(args.profiles)}...\r", end="")
     i += 1
 
-    if 'version' not in profile or profile['version'] != _profileVersion:
-        raise Exception(f"Incompatible profile version (required: {_profileVersion})")
+    if 'version' not in profile or profile['version'] != profileLib.profileVersion:
+        raise Exception(f"Incompatible profile version (required: {profileLib.profileVersion})")
 
     if not aggregatedProfile['target']:
         aggregatedProfile['target'] = profile['target']
@@ -137,17 +133,17 @@ for fileProfile in args.profiles:
             if aggregateIndex not in subAggregate:
                 subAggregate[aggregateIndex] = [
                     useSampleTime,  # total execution time
-                    1,
                     sample[0] * useSampleTime,  # energy (later power)
-                    sampleFormatter.sanitizeOutput(aggregateIndex, lStringStrip=aggregatedProfile['target']),  # label
-                    1
+                    1,
+                    1,
+                    sampleFormatter.sanitizeOutput(aggregateIndex, lStringStrip=aggregatedProfile['target'])
                 ]
             else:
                 subAggregate[aggregateIndex][0] += useSampleTime
+                subAggregate[aggregateIndex][1] += sample[0] * useSampleTime
+                subAggregate[aggregateIndex][2] += 1
                 if threadLocations[threadId] != aggregateIndex:
-                    subAggregate[aggregateIndex][1] += 1
-                subAggregate[aggregateIndex][2] += sample[0] * useSampleTime
-                subAggregate[aggregateIndex][4] += 1
+                    subAggregate[aggregateIndex][3] += 1
 
             threadLocations[threadId] = aggregateIndex
 
@@ -156,29 +152,31 @@ for fileProfile in args.profiles:
 
     for key in subAggregate:
         if key in aggregatedProfile['profile']:
-            aggregatedProfile['profile'][key][0] += subAggregate[key][0] * meanFac
-            aggregatedProfile['profile'][key][1] += subAggregate[key][1] * meanFac
-            aggregatedProfile['profile'][key][3] += subAggregate[key][2] * meanFac
+            aggregatedProfile['profile'][key][profileLib.aggTime] += subAggregate[key][0] * meanFac
+            aggregatedProfile['profile'][key][profileLib.aggEnergy] += subAggregate[key][1] * meanFac
+            aggregatedProfile['profile'][key][profileLib.aggSamples] += subAggregate[key][2] * meanFac
+            aggregatedProfile['profile'][key][profileLib.aggExecs] += subAggregate[key][3] * meanFac
         else:
             aggregatedProfile['profile'][key] = [
                 subAggregate[key][0] * meanFac,
-                subAggregate[key][1] * meanFac,
                 0,
+                subAggregate[key][1] * meanFac,
                 subAggregate[key][2] * meanFac,
-                subAggregate[key][3],
-                subAggregate[key][4] * meanFac
+                subAggregate[key][3] * meanFac,
+                subAggregate[key][4]
 
             ]
 
     del subAggregate
 
+# aggregatedProfile['profile'][key] = [time, power, energy, samples, executions, label]
 
 # aggregated energy and time, turn it to power
 if 'aggregated' not in aggregatedProfile or aggregatedProfile['aggregated'] is False:
     for key in aggregatedProfile['profile']:
-        time = aggregatedProfile['profile'][key][0]
-        energy = aggregatedProfile['profile'][key][3]
-        aggregatedProfile['profile'][key][2] = energy / time if time != 0 else 0
+        time = aggregatedProfile['profile'][key][profileLib.aggTime]
+        energy = aggregatedProfile['profile'][key][profileLib.aggEnergy]
+        aggregatedProfile['profile'][key][profileLib.aggPower] = energy / time if time != 0 else 0
 
     aggregatedProfile['aggregated'] = True
 
@@ -187,14 +185,14 @@ avgSampleTime = aggregatedProfile['samplingTime'] / aggregatedProfile['samples']
 frequency = 1 / avgSampleTime
 
 values = numpy.array(list(aggregatedProfile['profile'].values()), dtype=object)
-values = values[values[:, 3].argsort()]
+values = values[values[:, profileLib.aggEnergy].argsort()]
 
-times = numpy.array(values[:, 0], dtype=float)
-execs = numpy.array(values[:, 1], dtype=float)
-powers = numpy.array(values[:, 2], dtype=float)
-energies = numpy.array(values[:, 3], dtype=float)
-aggregationLabel = values[:, 4]
-samples = numpy.array(values[:, 5], dtype=float)
+times = numpy.array(values[:, profileLib.aggTime], dtype=float)
+powers = numpy.array(values[:, profileLib.aggPower], dtype=float)
+energies = numpy.array(values[:, profileLib.aggEnergy], dtype=float)
+samples = numpy.array(values[:, profileLib.aggSamples], dtype=float)
+execs = numpy.array(values[:, profileLib.aggExecs], dtype=float)
+aggregationLabel = values[:, profileLib.aggLabel]
 
 totalTime = numpy.sum(times)
 totalEnergy = numpy.sum(energies)

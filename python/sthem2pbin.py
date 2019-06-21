@@ -106,20 +106,27 @@ avgSampleTime = float(csvProfile[-1][0]) / profile['samples']
 
 i = 0
 csvProfile.pop(0)
+prevTime = None
 for sample in csvProfile:
     if (i % 1000 == 0):
         progress = int((i + 1) * 100 / len(csvProfile))
         print(f"Post processing... {progress}%\r", end="")
     i += 1
 
+    wallTime = float(sample[0])
+
+    if prevTime is None:
+        prevTime = wallTime
+
     power = float(sample[args.power_sensor])
-    time = float(sample[0])
+
     processedSample = []
     for cpu in useCpus:
         pc = int(sample[maxPowerSensors + cpu + 1])
-        processedSample.append([cpu, (time / len(useCpus)), sampleParser.parseFromPC(pc)])
+        processedSample.append([cpu, ((wallTime - prevTime) / len(useCpus)), sampleParser.parseFromPC(pc)])
 
-    profile['profile'].append([power, time, processedSample])
+    prevTime = wallTime
+    profile['profile'].append([power, wallTime, processedSample])
 
 del csvProfile
 

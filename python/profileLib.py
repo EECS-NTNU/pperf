@@ -11,6 +11,16 @@ LABEL_UNKNOWN = '_unknown'
 LABEL_FOREIGN = '_foreign'
 LABEL_KERNEL = '_kernel'
 
+aggProfileVersion = 'a0.5'
+profileVersion = '0.3'
+
+aggTime = 0
+aggPower = 1
+aggEnergy = 2
+aggSamples = 3
+aggExecs = 4
+aggLabel = 5
+
 
 def parseRange(stringRange):
     result = []

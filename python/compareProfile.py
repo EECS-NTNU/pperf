@@ -12,16 +12,15 @@ import tabulate
 import copy
 import math
 
+import profileLib
+
 
 def error(baseline, value, totalBaseline, totalValue, weight):
     return value - baseline
 
 
 def weightedError(baseline, value, totalBaseline, totalValue, weight):
-    if totalBaseline == 0:
-        return 0
-    else:
-        return error(baseline, value, totalBaseline, totalValue, weight) * weight
+    return error(baseline, value, totalBaseline, totalValue, weight) * weight
 
 
 def absoluteWeightedError(baseline, value, totalBaseline, totalValue, weight):
@@ -76,8 +75,6 @@ def aggregateWeightedRootMeanSquaredError(baselines, values, totalBaseline, tota
     return math.sqrt(sum([math.pow(error(baseline, value, totalBaseline, totalValue, weight), 2) * weight for baseline, value, weight in zip(baselines, values, weights)]))
 
 
-_aggregatedProfileVersion = "a0.4"
-
 # [ parameter, description, error function,  ]
 errorFunctions = numpy.array([
     ['relative_error', 'Relative Error', relativeError],
@@ -105,6 +102,8 @@ parser.add_argument("profiles", help="aggregated profiles to compare", nargs="+"
 parser.add_argument("--use-time", help="compare time values", action="store_true", default=False)
 parser.add_argument("--use-energy", help="compare energy values (default)", action="store_true", default=False)
 parser.add_argument("--use-power", help="compare power values", action="store_true", default=False)
+parser.add_argument("--use-samples", help="compare sample counters", action="store_true", default=False)
+parser.add_argument("--use-exec-times", help="compare execution time", action="store_true", default=False)
 parser.add_argument("-e", "--error", help=f"error function (default: {errorFunctions[0][0]})", default=False, choices=errorFunctions[:, 0], type=str.lower)
 parser.add_argument("-a", "--aggregate", help="aggregate erros", default=False, choices=aggregateFunctions[:, 0], type=str.lower)
 parser.add_argument("-c", "--compensation", help="switch on latency compensation (experimental)", action="store_true", default=False)
@@ -119,7 +118,7 @@ parser.add_argument("-q", "--quiet", action="store_true", help="do not automatic
 
 args = parser.parse_args()
 
-if (not args.use_time and not args.use_energy and not args.use_power):
+if (not args.use_time and not args.use_energy and not args.use_power and not args.use_samples and not args.use_exec_times):
     args.use_energy = True
 
 if (len(args.name) == 0 and args.names is not False):
@@ -127,17 +126,28 @@ if (len(args.name) == 0 and args.names is not False):
 
 header = ""
 
-compareOffset = 3
+cmpTime = 0
+cmpPower = 1
+cmpEnergy = 2
+cmpRelSamples = 3
+cmpExecs = 4
+
+compareOffset = cmpEnergy
 if args.use_time:
     header = "Time "
-    compareOffset = 0
+    cmpOffset = cmpTime
 if args.use_power:
     header = "Power "
-    compareOffset = 2
+    cmpOffset = cmpPower
+if args.use_samples:
+    header = "Relative Samples "
+    cmpOffset = cmpRelSamples
+if args.use_exec_times:
+    header = "Execution Times "
+    cmpOffset = cmpExecs
 if args.use_energy:
     header = "Energy "
-    compareOffset = 3
-
+    cmpOffset = cmpEnergy
 
 if (args.time_threshold is not 0 and (args.time_threshold < 0 or args.time_threshold > 1.0)):
     print("ERROR: time threshold out of range")
@@ -164,14 +174,8 @@ if args.profile.endswith(".bz2"):
 else:
     baselineProfile = pickle.load(open(args.profile, mode="rb"))
 
-if 'version' not in baselineProfile or baselineProfile['version'] != _aggregatedProfileVersion:
-    raise Exception(f"Incompatible profile version (required: {_aggregatedProfileVersion})")
-
-
-totals = False  # [0, 0]
-# for key in baselineProfile['profile']:
-#     totals[0] += baselineProfile['profile'][key][0]
-#    totals[1] += baselineProfile['profile'][key][1]
+if 'version' not in baselineProfile or baselineProfile['version'] != profileLib.aggProfileVersion:
+    raise Exception(f"Incompatible profile version (required: {profileLib.aggProfileVersion})")
 
 errorFunction = False
 aggregateFunction = False
@@ -191,102 +195,105 @@ if args.error is not False:
     chosenErrorFunction = errorFunctions[numpy.where(errorFunctions == args.error)[0][0]]
     errorFunction = chosenErrorFunction[2]
 
+chart = {'name': '', 'fullTotals': [0.0, 0.0, 0.0, 0.0, 0.0], 'totals': [0.0, 0.0, 0.0, 0.0, 0.0], 'keys': [], 'labels': [], 'values': [], 'errors': [], 'weights': []}
+baselineChart = copy.deepcopy(chart)
+baselineChart['name'] = f"{baselineProfile['samples'] / baselineProfile['samplingTime']:.2f} Hz, {baselineProfile['samplingTime']:.2f} s, {baselineProfile['latencyTime'] * 1000000 / baselineProfile['samples']:.2f} us"
 
-fullTotals = [0.0, 0.0, 0.0, 0.0]
 for key in baselineProfile['profile']:
-    fullTotals[0] += baselineProfile['profile'][key][0]
-    fullTotals[1] += baselineProfile['profile'][key][1]
-    fullTotals[3] += baselineProfile['profile'][key][3]
-fullTotals[1] = (fullTotals[0] / fullTotals[1])
-fullTotals[2] = (fullTotals[3] / fullTotals[0]) if fullTotals[0] != 0 else 0
+    baselineChart['fullTotals'][cmpTime] += baselineProfile['profile'][key][profileLib.aggTime]
+    baselineChart['fullTotals'][cmpEnergy] += baselineProfile['profile'][key][profileLib.aggEnergy]
+    baselineChart['fullTotals'][cmpExecs] += baselineProfile['profile'][key][profileLib.aggExecs]
+baselineChart['fullTotals'][cmpRelSamples] = 1
+baselineChart['fullTotals'][cmpPower] = (baselineChart['fullTotals'][cmpEnergy] / baselineChart['fullTotals'][cmpTime])
 
 
-chart = {'name': '', 'fullTotals': [0.0, 0.0, 0.0, 0.0], 'totals': [0.0, 0.0, 0.0, 0.0], 'keys': {}}
+chart = {'name': '', 'fullTotals': [0.0, 0.0, 0.0, 0.0, 0.0], 'totals': [0.0, 0.0, 0.0, 0.0, 0.0], 'values': [], 'errors': [], 'weights': []}
 errorCharts = [copy.deepcopy(chart) for x in args.profiles]
 
-
 i = 1
-for index, path in enumerate(args.profiles):
+for index, errorChart in enumerate(errorCharts):
     print(f"Compare profile {i}/{len(args.profiles)}...\r", end="")
     i += 1
 
-    if path.endswith(".bz2"):
-        profile = pickle.load(bz2.BZ2File(path, mode="rb"))
+    if args.profiles[index].endswith(".bz2"):
+        profile = pickle.load(bz2.BZ2File(args.profiles[index], mode="rb"))
     else:
-        profile = pickle.load(open(path, mode="rb"))
+        profile = pickle.load(open(args.profiles[index], mode="rb"))
 
-    if 'version' not in profile or profile['version'] != _aggregatedProfileVersion:
-        raise Exception(f"Incompatible profile version (required: {_aggregatedProfileVersion})")
+    if 'version' not in profile or profile['version'] != profileLib.aggProfileVersion:
+        raise Exception(f"Incompatible profile version (required: {profileLib.aggProfileVersion})")
 
     if len(args.name) > index:
         errorCharts[index]['name'] = args.name[index]
     else:
         errorCharts[index]['name'] = f"{profile['samples'] / profile['samplingTime']:.2f} Hz, {profile['samplingTime']:.2f} s, {profile['latencyTime'] * 1000000 / profile['samples']:.2f} us"
 
-    # profile['profile] = [[time, energy, label]]
     for key in profile['profile']:
         if key in baselineProfile['profile']:
-            if (((args.time_threshold == 0) or ((baselineProfile['profile'][key][0] / fullTotals[0]) >= args.time_threshold)) and
-               ((args.energy_threshold == 0) or ((baselineProfile['profile'][key][3] / fullTotals[3]) >= args.energy_threshold))):
-                for chart in errorCharts:
-                    if key not in chart['keys']:
-                        chart['keys'][key] = [
-                            baselineProfile['profile'][key][4],  # label
-                            baselineProfile['profile'][key][0],  # time
-                            baselineProfile['profile'][key][0] / baselineProfile['profile'][key][1],  # avg execution time
-                            baselineProfile['profile'][key][2],  # power
-                            baselineProfile['profile'][key][3],  # energy
-                            0.0,  # time
-                            0.0,  # avg execution time
-                            0.0,  # power
-                            0.0,  # energy
-                            0.0,  # time error
-                            0.0,  # avg execution time error
-                            0.0,  # power error
-                            0.0,  # energy error
-                            1.0   # weight
-                        ]
-                errorCharts[index]['keys'][key][5] = profile['profile'][key][0]
-                errorCharts[index]['keys'][key][6] = profile['profile'][key][0] / profile['profile'][key][1]
-                errorCharts[index]['keys'][key][7] = profile['profile'][key][2]
-                errorCharts[index]['keys'][key][8] = profile['profile'][key][3]
-                errorCharts[index]['totals'][0] += profile['profile'][key][0]
-                errorCharts[index]['totals'][1] += profile['profile'][key][1]
-                errorCharts[index]['totals'][3] += profile['profile'][key][3]
-            errorCharts[index]['fullTotals'][0] += profile['profile'][key][0]
-            errorCharts[index]['fullTotals'][1] += profile['profile'][key][1]
-            errorCharts[index]['fullTotals'][3] += profile['profile'][key][3]
+            if (((args.time_threshold == 0) or ((baselineProfile['profile'][key][profileLib.aggTime] / baselineChart['fullTotals'][cmpTime]) >= args.time_threshold)) and
+               ((args.energy_threshold == 0) or ((baselineProfile['profile'][key][profileLib.aggEnergy] / baselineChart['fullTotals'][cmpEnergy]) >= args.energy_threshold))):
+                if key not in baselineChart['keys']:
+                    baselineChart['keys'].append(key)
+                    baselineChart['labels'].append(baselineProfile['profile'][key][profileLib.aggLabel])
+                    baselineChart['values'].append([
+                        baselineProfile['profile'][key][profileLib.aggTime],     # time
+                        baselineProfile['profile'][key][profileLib.aggPower],    # power
+                        baselineProfile['profile'][key][profileLib.aggEnergy],   # energy
+                        baselineProfile['profile'][key][profileLib.aggSamples] / baselineProfile['samples'],  # relSamples
+                        baselineProfile['profile'][key][profileLib.aggTime] / baselineProfile['profile'][key][profileLib.aggExecs]  # execTimes
+                    ])
+                    for chart in errorCharts:
+                        chart['values'].append([0.0, 0.0, 0.0, 0.0, 0.0])
 
-    errorCharts[index]['totals'][1] += (errorCharts[index]['totals'][0] / errorCharts[index]['totals'][1]) if errorCharts[index]['totals'][1] != 0 else 0
-    errorCharts[index]['totals'][2] += (errorCharts[index]['totals'][3] / errorCharts[index]['totals'][0]) if (errorCharts[index]['totals'][0] != 0) else 0
-    errorCharts[index]['fullTotals'][1] += errorCharts[index]['fullTotals'][0] / errorCharts[index]['fullTotals'][1]
-    errorCharts[index]['fullTotals'][2] += (errorCharts[index]['fullTotals'][3] / errorCharts[index]['fullTotals'][0]) if (errorCharts[index]['fullTotals'][0] != 0) else 0
+                keyIndex = baselineChart['keys'].index(key)
+                errorChart['values'][keyIndex] = [
+                    profile['profile'][key][profileLib.aggTime],
+                    profile['profile'][key][profileLib.aggPower],
+                    profile['profile'][key][profileLib.aggEnergy],
+                    profile['profile'][key][profileLib.aggSamples] / profile['samples'],
+                    profile['profile'][key][profileLib.aggTime] / profile['profile'][key][profileLib.aggExecs]
+                ]
+                errorChart['totals'][cmpTime] += profile['profile'][key][profileLib.aggTime]
+                errorChart['totals'][cmpEnergy] += profile['profile'][key][profileLib.aggEnergy]
+                errorChart['totals'][cmpExecs] += profile['profile'][key][profileLib.aggTime] / profile['profile'][key][profileLib.aggExecs]
+            errorChart['fullTotals'][cmpTime] += profile['profile'][key][profileLib.aggTime]
+            errorChart['fullTotals'][cmpEnergy] += profile['profile'][key][profileLib.aggEnergy]
+            errorChart['fullTotals'][cmpExecs] += profile['profile'][key][profileLib.aggTime] / profile['profile'][key][profileLib.aggExecs]
+
+    errorChart['totals'][cmpPower] = (errorChart['totals'][cmpEnergy] / errorChart['totals'][cmpTime]) if errorChart['totals'][cmpTime] != 0 else 0
+    errorChart['totals'][cmpRelSamples] = 1
+    errorChart['fullTotals'][cmpPower] = (errorChart['fullTotals'][cmpEnergy] / errorChart['fullTotals'][cmpTime]) if errorChart['fullTotals'][cmpTime] != 0 else 0
+    errorChart['fullTotals'][cmpRelSamples] = 1
 
     del profile
 
 
-if len(errorCharts[0]['keys']) == 0:
+if len(baselineChart['keys']) == 0:
     raise Exception("Nothing found to compare, limit too strict?")
 
 # calculate baseline total
-if totals is False:
-    values = numpy.array(list(errorCharts[0]['keys'].values()), dtype=object)
-    totals = [numpy.sum(values[:, 1]), numpy.sum(values[:, 2]) / len(values[:, 2]), numpy.sum(values[:, 3]), numpy.sum(values[:, 4])]
+values = numpy.array(baselineChart['values'])
+baselineProfile['totals'] = [
+    numpy.sum(values[:, 0]),
+    0.0,
+    numpy.sum(values[:, 2]),
+    1,
+    numpy.sum(values[:, 4])
+]
+baselineProfile['totals'][cmpPower] = (baselineProfile['totals'][cmpEnergy] / baselineProfile['totals'][cmpTime]) if baselineProfile['totals'][cmpTime] != 0 else 0
+baselineProfile['totals'][cmpRelSamples] = 1
+del values
 
 # fill in the weights, based on baseline energy
-for key in errorCharts[0]['keys']:
+for index, _ in enumerate(baselineChart['keys']):
     for chart in errorCharts:
-        chart['keys'][key][10] = chart['keys'][key][3] / totals[2]
+        chart['weights'].append(chart['values'][index][cmpEnergy] / baselineProfile['totals'][cmpEnergy])
 
 # fill in the errors
 if errorFunction is not False:
-    for key in errorCharts[0]['keys']:
+    for index, _ in enumerate(baselineChart['keys']):
         for chart in errorCharts:
-            chart['keys'][key][9] = errorFunction(chart['keys'][key][1], chart['keys'][key][5], totals[0], chart['totals'][0], chart['keys'][key][13])
-            chart['keys'][key][10] = errorFunction(chart['keys'][key][2], chart['keys'][key][6], totals[1], chart['totals'][1], chart['keys'][key][13])
-            chart['keys'][key][11] = errorFunction(chart['keys'][key][3], chart['keys'][key][7], totals[2], chart['totals'][2], chart['keys'][key][13])
-            chart['keys'][key][12] = errorFunction(chart['keys'][key][4], chart['keys'][key][8], totals[3], chart['totals'][3], chart['keys'][key][13])
-
+            chart['errors'].append(errorFunction(baselineChart['values'][index][cmpOffset], chart['values'][index][cmpOffset], baselineChart['totals'][cmpOffset], chart['totals'][cmpOffset], chart['weights'][index]))
 
 # names = [ key, name1, name2, name3, name4 ]
 # values = [ key, error1, error2, error3, error4 ]a
@@ -301,38 +308,32 @@ header = header.strip()
 
 if errorFunction is not False and aggregateFunction is False:
     headers = numpy.array([chart['name'] for chart in errorCharts])
-    tmp = numpy.array(list(errorCharts[0]['keys'].values()), dtype=object)
-    rows = numpy.array([x + f', {t * 1000:.3f} ms' for x, t in zip(tmp[:, 0].flatten(), tmp[:, 2].flatten())], dtype=object).reshape(-1, 1)
+    baselineValues = numpy.array(baselineChart['values'])
+    rows = numpy.array([x + f', {t * 1000:.3f} ms' for x, t in zip(baselineChart['labels'], baselineValues[:, 4].flatten())], dtype=object).reshape(-1, 1)
     execTimes = numpy.empty((rows.shape[0], 0))
-    del tmp
+    del baselineValues
     for chart in errorCharts:
-        values = numpy.array(list(chart['keys'].values()), dtype=object)
-        rows = numpy.append(rows, values[:, (9 + compareOffset)].reshape(-1, 1), axis=1)
-        execTimes = numpy.append(execTimes, values[:, 6].reshape(-1, 1), axis=1)
+        chartValues = numpy.array(chart['values'])
+        rows = numpy.append(rows, numpy.array(chart['errors']).reshape(-1, 1), axis=1)
+        execTimes = numpy.append(execTimes, chartValues[:, 4].reshape(-1, 1), axis=1)
 
     asort = rows[:, 1].argsort()
     rows = rows[asort]
     execTimes = execTimes[asort]
 
-#    if args.limit != 0:
-#        nrows = numpy.empty((0, rows.shape[1]), dtype=object)
-#        for row in rows:
-#            if max(map(abs, list(row[1:]))) >= args.limit:
-#                nrows = numpy.append(nrows, [row], axis=0)
-#        rows = nrows
-
 if aggregateFunction is not False:
+    baselineValues = numpy.array(baselineChart['values'])
     rows = numpy.array([chart['name'] for chart in errorCharts], dtype=object).reshape(-1, 1)
     execTimes = numpy.array([''] * len(rows)).reshape(1, -1)
     errors = numpy.empty(0)
     for chart in errorCharts:
-        chartValues = numpy.array(list(chart['keys'].values()), dtype=object)
+        chartValues = numpy.array(chart['values'])
         errors = numpy.append(errors, aggregateFunction(
-            chartValues[:, (1 + compareOffset)],
-            chartValues[:, ((5 if errorFunction is False else 9) + compareOffset)],
-            totals[0 + compareOffset],
-            chart['totals'][0 + compareOffset],
-            chartValues[:, 13]
+            baselineValues[:, cmpOffset],
+            chart['errors'] if errorFunction is not False else chartValues[:, cmpOffset],
+            baselineChart['totals'][cmpOffset],
+            chart['totals'][cmpOffset],
+            chart['weights']
         ))
     rows = numpy.append(rows, errors.reshape(-1, 1), axis=1)
     headers = numpy.array([header], dtype=object)
@@ -358,7 +359,7 @@ if (args.plot):
 
     fig['layout'] = go.Layout(
         title=go.layout.Title(
-            text=f"{header}, {baselineProfile['target']}, Frequency {baselineProfile['samples'] / baselineProfile['samplingTime']:.2f} Hz, Time {baselineProfile['samplingTime']:.2f} s, Energy {fullTotals[3]:.2f} J, Latency {baselineProfile['latencyTime'] * 1000000 / baselineProfile['samples']:.2f} us",
+            text=f"{header}, {baselineProfile['target']}, Frequency {baselineProfile['samples'] / baselineProfile['samplingTime']:.2f} Hz, Time {baselineProfile['samplingTime']:.2f} s, Energy {baselineChart['fullTotals'][cmpEnergy]:.2f} J, Latency {baselineProfile['latencyTime'] * 1000000 / baselineProfile['samples']:.2f} us",
             xref='paper',
             x=0
         ),
