@@ -294,5 +294,5 @@ if (args.output):
 
 
 if (not args.quiet):
-    relativeSamples = [f"{x / totalSamples:.02f}" for x in samples]
+    relativeSamples = [f"{x / totalSamples:.3f}" for x in samples]
     print(tabulate.tabulate(zip(aggregationLabel, times, execs, powers, energies, samples, relativeSamples), headers=['Function', 'Time [s]', 'Executions', 'Power [W]', 'Energy [J]', 'Samples', '%']))

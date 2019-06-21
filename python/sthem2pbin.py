@@ -104,8 +104,6 @@ profile['samples'] = len(csvProfile)
 profile['samplingTime'] = float(csvProfile[-1][0])
 avgSampleTime = float(csvProfile[-1][0]) / profile['samples']
 
-
-
 i = 0
 csvProfile.pop(0)
 for sample in csvProfile:
@@ -119,7 +117,7 @@ for sample in csvProfile:
     processedSample = []
     for cpu in useCpus:
         pc = int(sample[maxPowerSensors + cpu + 1])
-        processedSample.append([cpu, (avgSampleTime / len(useCpus)), sampleParser.parseFromPC(pc)])
+        processedSample.append([cpu, (time / len(useCpus)), sampleParser.parseFromPC(pc)])
 
     profile['profile'].append([power, time, processedSample])
 
