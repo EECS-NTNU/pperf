@@ -523,9 +523,7 @@ int main(int const argc, char **argv) {
 
     //Necessary structs for reading out the programm counter
     static struct user_regs_struct regs = {};
-#ifdef __aarch64__
     static struct iovec rvec = { .iov_base = &regs, .iov_len = sizeof(regs) };
-#endif
 
     //Setting the target pid for the timer callback to send signals to
     _callback_data.tid = samplingTarget;
@@ -671,11 +669,8 @@ int main(int const argc, char **argv) {
 
         unsigned int i = 0;
         while (i < tasks.count) {
-#ifdef __aarch64__
             rp = ptrace(PTRACE_GETREGSET, tasks.list[i].tid, NT_PRSTATUS, &rvec);
-#else   
-            rp = ptrace(PTRACE_GETREGS, tasks.list[i].tid, NULL, &regs);
-#endif
+            //rp = ptrace(PTRACE_GETREGS, tasks.list[i].tid, NULL, &regs);
             if (rp == -1 && errno == ESRCH) {
                 debug_printf("[%d] death on ptrace regs\n", tasks.list[i].tid);
                 if (removeTaskIndex(i)) {
