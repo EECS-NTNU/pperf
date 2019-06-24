@@ -522,8 +522,8 @@ int main(int const argc, char **argv) {
 
     //Leave space for the profile header
     if (output != NULL) {
-        // Leave place for Magic Number, Wall Time, Time, Samples, VMMap Count
-        fseek(output, 2 * sizeof(uint32_t) + 3 * sizeof(uint64_t), SEEK_SET);
+        // Leave place for Magic Number, Wall Time, Latency Time, Samples, PMU Data Size, VMMap Count
+        fseek(output, 3 * sizeof(uint32_t) + 3 * sizeof(uint64_t), SEEK_SET);
     }
 
     //Necessary structs for reading out the programm counter
@@ -559,7 +559,11 @@ int main(int const argc, char **argv) {
     clock_t latencyCpuStartTime = clock();
 #endif
     struct timespec sampleWallTime = {};
-    double samplePMUValue = pmuRead();
+
+    uint32_t const sizePMUData = pmuDataSize();
+    struct PMUData *samplePMUData = malloc(sizePMUData);
+    pmuRead(samplePMUData);
+
     uint64_t sampleTime = 0;
    
     if (startTimer(&timer) != 0) {
@@ -667,10 +671,10 @@ int main(int const argc, char **argv) {
             }
             
         }
-#ifndef PC_ONLY
         clock_gettime(CLOCK_REALTIME, &sampleWallTime);
-        samplePMUValue = pmuRead();
-        debug_printf("[sample] PMU Value: %f\n", samplePMUValue);
+#ifndef PC_ONLY
+        pmuRead(samplePMUData);
+        debug_printf("[sample] PMU Value: %f\n", *samplePMUValue);
 #endif
 
         unsigned int i = 0;
@@ -699,11 +703,9 @@ int main(int const argc, char **argv) {
         }
 
         if (output != NULL ) {
-#ifndef PC_ONLY
             sampleTime = timespecToMicroseconds(&sampleWallTime);
-#endif
             fwrite((void *) &sampleTime, sizeof(uint64_t), 1, output);
-            fwrite((void *) &samplePMUValue, sizeof(double), 1, output);
+            fwrite((void *) samplePMUData, sizePMUData, 1, output);
             fwrite((void *) &tasks.count, sizeof(uint32_t), 1, output);
             fwrite((void *) tasks.list, sizeof(struct task), tasks.count, output);
         }
@@ -757,17 +759,16 @@ int main(int const argc, char **argv) {
         //Write VMMap
         fwrite((void *) processMap.maps, sizeof(struct VMMap), processMap.count, output);
         //HEADER
-        uint32_t magic = (uint32_t) pmuWhat();
+        uint32_t const magic = (uint32_t) pmuWhat();
         fseek(output, 0, SEEK_SET);
         fwrite((void *) &magic, sizeof(uint32_t), 1, output);
         fwrite((void *) &totalWallTimeUs, sizeof(uint64_t), 1, output);
         fwrite((void *) &totalWallLatencyUs, sizeof(uint64_t), 1, output);
         fwrite((void *) &samples, sizeof(uint64_t), 1, output);
+        fwrite((void *) &sizePMUData, sizeof(uint32_t), 1, output);
         fwrite((void *) &processMap.count, sizeof(uint32_t), 1, output);
     }
 
-    //Write Header -> Samples, Threads, Offset, sample interval (us)
-    
     if (verboseOutput) {
         printf("[VERBOSE] time       : %10lu us (ideal), %10lu us (actual)\n", totalWallTimeUs - totalWallLatencyUs, totalWallTimeUs);
         printf("[VERBOSE] interrupts : %10lu    (total), %10lu    (foreign) \n", interrupts + samples, interrupts );

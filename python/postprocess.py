@@ -93,12 +93,15 @@ profile['volts'] = args.volts
 useVolts = profile['volts']
 
 try:
-    (wallTimeUs, latencyTimeUs, sampleCount, vmmapCount) = struct.unpack_from(endianess + 'QQQI', binProfile, binOffset)
-    binOffset += 28
+    (wallTimeUs, latencyTimeUs, sampleCount, pmuDataSize, vmmapCount) = struct.unpack_from(endianess + 'QQQII', binProfile, binOffset)
+    binOffset += 8 + 8 + 8 + 4 + 4 
 except Exception as e:
     print("Unexpected end of file!")
     sys.exit(1)
 
+if pmuDataSize != 8:
+    print(f"pmuData size not supported: {pmuDataSize}")
+    sys.exit(1)
 
 if (sampleCount == 0):
     print("No samples found in profile!")

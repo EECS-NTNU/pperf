@@ -4,6 +4,15 @@
 #include <unistd.h>
 #include <time.h>
 
+
+struct PMUData {
+  double value;
+} __attribute__((packed));
+
+uint32_t pmuDataSize(void) {
+  return sizeof(struct PMUData);
+}
+
 char *standardRapl = "/sys/class/powercap/intel-rapl:0";
 
 
@@ -38,7 +47,8 @@ int pmuInit(char *pmuArg) {
   if (fscanf(RAPLFile, "%llu", &lastEnergy) != 1)
     goto pmu_read_error;
 
-  pmuRead();
+  struct PMUData dummy;
+  pmuRead(&dummy);
 
   return 0;
  pmu_read_error:
@@ -49,16 +59,19 @@ int pmuInit(char *pmuArg) {
   return 1;
 }
 
-double pmuRead(void) {
+void pmuRead(struct PMUData *data) {
   struct timespec currentTime;
   unsigned long long energy = 0;
   long long energyDiff = 0;
   unsigned long long time = 0;
-  double power;
-  if (freopen(NULL, "r", RAPLFile) == NULL)
-    return 0.0;
-  if (fscanf(RAPLFile, "%llu", &energy) != 1)
-    return 0.0;
+  if (freopen(NULL, "r", RAPLFile) == NULL) {
+    data->value = 0.0;
+    return;
+  }
+  if (fscanf(RAPLFile, "%llu", &energy) != 1) {
+    data->value = 0.0;
+    return;
+  }
   clock_gettime(CLOCK_REALTIME, &currentTime);
   time = (currentTime.tv_sec * 1000000) + (currentTime.tv_nsec / 1000);
 
@@ -67,11 +80,10 @@ double pmuRead(void) {
   else
     energyDiff = energy - lastEnergy;
 
-  power = (double) (energyDiff) / (time - lastTime);
+  data->value = (double) (energyDiff) / (time - lastTime);
 
   lastEnergy = energy;
   lastTime = time;
-  return power;
 }
 
 enum PMU_WHAT pmuWhat(void) {

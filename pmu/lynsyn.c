@@ -21,6 +21,14 @@
 #include "pmu.h"
 #include "lynsyn.h"
 
+struct PMUData {
+  double value;
+} __attribute__((packed));
+
+uint32_t pmuDataSize(void) {
+  return sizeof(struct PMUData);
+}
+
 unsigned int currentSensor = 0;
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -207,8 +215,9 @@ pmu_init_error:
   return 1;
 }
 
-double pmuRead(void) {
-  return adjustCurrent((retrieveCurrents())[currentSensor], currentSensor);
+
+void pmuRead(struct PMUData *data) {
+  data->value = adjustCurrent((retrieveCurrents())[currentSensor], currentSensor);
 }
 
 enum PMU_WHAT pmuWhat(void) {
