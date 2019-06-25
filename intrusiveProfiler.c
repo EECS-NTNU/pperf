@@ -38,7 +38,6 @@ unsigned int getOnlineCPUIds(unsigned int **onlineCPUs) {
     while (getline(&buf, &n, fd) != -1) {
         if (strstr(buf, "processor") == buf) {
             if (sscanf(buf, "processor%s%u", buf, &id) == 2) {
-                c++;
                 if (*onlineCPUs == NULL) {
                     *onlineCPUs = malloc(c * sizeof(unsigned int));
                 } else {
@@ -47,7 +46,7 @@ unsigned int getOnlineCPUIds(unsigned int **onlineCPUs) {
                 if (*onlineCPUs == NULL) {
                     return 0;
                 }
-                (*onlineCPUs)[c - 1] = id;
+                (*onlineCPUs)[c++] = id;
             }
         }
     }
@@ -307,7 +306,7 @@ int main(int const argc, char **argv) {
     char *pmuArg = NULL;
     bool verboseOutput = 0;
     bool coreIsolation = 0;
-    unsigned int *onlineCPUs;
+    unsigned int *onlineCPUs = NULL;
     unsigned int nCPUs = 0;
     double samplingFrequency = 10000;
     int rr = 0;
@@ -451,7 +450,7 @@ int main(int const argc, char **argv) {
        if (nCPUs > 0) {
            cpu_set_t  mask;
            CPU_ZERO(&mask);
-           CPU_SET(onlineCPUs[nCPUs -1] - 1, &mask);
+           CPU_SET(onlineCPUs[nCPUs -1], &mask);
            if (sched_setaffinity(0, sizeof(mask), &mask) == -1) {
                fprintf(stderr, "ERROR: could not set cpu mask for sampler\n");
                ret = 1; goto exit;
