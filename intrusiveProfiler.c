@@ -27,6 +27,36 @@
         _ptrace_return = ptrace(PTRACE_CONT, target, NULL, signal) 
 
 
+unsigned int getOnlineCPUIds(unsigned int **onlineCPUs) {
+    char *buf = NULL;
+    size_t n = 0;
+    unsigned int c = 0;
+    unsigned int id = 0;
+    FILE *fd = fopen("/proc/cpuinfo","r");
+    if (fd == NULL)
+        return 0;
+    while (getline(&buf, &n, fd) != -1) {
+        if (strstr(buf, "processor") == buf) {
+            if (sscanf(buf, "processor%s%u", buf, &id) == 2) {
+                c++;
+                if (*onlineCPUs == NULL) {
+                    *onlineCPUs = malloc(c * sizeof(unsigned int));
+                } else {
+                    *onlineCPUs = realloc(*onlineCPUs, c * sizeof(unsigned int));
+                }
+                if (*onlineCPUs == NULL) {
+                    return 0;
+                }
+                (*onlineCPUs)[c - 1] = id;
+            }
+        }
+    }
+    if (buf != NULL) {
+        free(buf);
+    }
+    return c;
+}
+
 struct task {
     uint32_t tid;
     uint64_t pc;
@@ -277,6 +307,8 @@ int main(int const argc, char **argv) {
     char *pmuArg = NULL;
     bool verboseOutput = 0;
     bool coreIsolation = 0;
+    unsigned int *onlineCPUs;
+    unsigned int nCPUs = 0;
     double samplingFrequency = 10000;
     int rr = 0;
     int fifo = 0;
@@ -412,14 +444,14 @@ int main(int const argc, char **argv) {
     }
     //Core isolation feature
     if (coreIsolation) {
-       long const nCores = sysconf(_SC_NPROCESSORS_ONLN);
-       if (nCores == 1 && verboseOutput) {
+       nCPUs = getOnlineCPUIds(&onlineCPUs);
+       if (nCPUs == 1 && verboseOutput) {
            fprintf(stdout, "[VERBOSE] CPU isolation does not work on a single core system\n");
        }
-       if (nCores > 0) {
+       if (nCPUs > 0) {
            cpu_set_t  mask;
            CPU_ZERO(&mask);
-           CPU_SET(nCores - 1, &mask);
+           CPU_SET(onlineCPUs[nCPUs -1] - 1, &mask);
            if (sched_setaffinity(0, sizeof(mask), &mask) == -1) {
                fprintf(stderr, "ERROR: could not set cpu mask for sampler\n");
                ret = 1; goto exit;
@@ -451,12 +483,11 @@ int main(int const argc, char **argv) {
         }
         //Core isolation feature
         if (coreIsolation) {
-            long const nCores = sysconf(_SC_NPROCESSORS_ONLN);
-            if (nCores > 1) {
+            if (nCPUs > 1) {
                 cpu_set_t  mask;
                 CPU_ZERO(&mask);
-                for (long i = 0; i < nCores - 1; i++) {
-                    CPU_SET(i, &mask);
+                for (long i = 0; i < nCPUs - 1; i++) {
+                    CPU_SET(onlineCPUs[i], &mask);
                 }
                 if (sched_setaffinity(0, sizeof(mask), &mask) == -1) {
                     fprintf(stderr, "ERROR: could not set cpu mask for target\n");
