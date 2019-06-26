@@ -63,6 +63,7 @@ aggregatedProfile = {
     'latencyTime': 0,
     'profile': {},
     'volts': 0,
+    'name': False,
     'target': False,
     'mean': len(args.profiles),
     'aggregated': False
@@ -91,6 +92,7 @@ for fileProfile in args.profiles:
         raise Exception(f"Incompatible profile version (required: {profileLib.profileVersion})")
 
     if not aggregatedProfile['target']:
+        aggregatedProfile['name'] = profile['name']
         aggregatedProfile['target'] = profile['target']
         aggregatedProfile['volts'] = profile['volts']
 
@@ -235,7 +237,7 @@ if (args.plot):
         )],
         "layout": go.Layout(
             title=go.layout.Title(
-                text=f"{aggregatedProfile['target']}, {frequency:.2f} Hz, {aggregatedProfile['samples']:.2f} samples, {(avgLatencyTime * 1000000):.2f} us latency, {totalEnergy:.2f} J" + (f", mean of {aggregatedProfile['mean']} runs" if aggregatedProfile['mean'] > 1 else ""),
+                text=f"{aggregatedProfile['name']}, {frequency:.2f} Hz, {aggregatedProfile['samples']:.2f} samples, {(avgLatencyTime * 1000000):.2f} us latency, {totalEnergy:.2f} J" + (f", mean of {aggregatedProfile['mean']} runs" if aggregatedProfile['mean'] > 1 else ""),
                 xref='paper',
                 x=0
             ),

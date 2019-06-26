@@ -18,6 +18,7 @@ profile = {
     'latencyTime': 0,
     'volts': 1,
     'cpus': 1,
+    'name': "",
     'target': "",
     'binaries': [],
     'functions': [],
@@ -92,6 +93,7 @@ sys.stdout.flush()
 sampleParser.loadVMMap(args.vmmap)
 print("finished")
 
+profile['name'] = args.name if args.name else sampleParser.binaries[0]['binary']
 profile['target'] = args.name if args.name else sampleParser.binaries[0]['binary']
 
 if (args.kallsyms):

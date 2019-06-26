@@ -112,7 +112,7 @@ if not args.no_threads:
     print("finished")
 
 
-title = f"{profile['target']}, {freq:.2f} Hz, {profile['samples']} samples, {int(avgSampleLatency * 1000000)} us latency"
+title = f"{profile['name']}, {freq:.2f} Hz, {profile['samples']} samples, {int(avgSampleLatency * 1000000)} us latency"
 if args.interpolate > 1:
     title += f", {args.interpolate} samples interpolated"
 threadAxisHeight = 0 if args.no_threads else 0.1 + (0.233 * min(1, len(threads) / 32))

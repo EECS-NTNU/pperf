@@ -16,6 +16,7 @@ profile = {
     'latencyTime': 0,
     'volts': 0,
     'cpus': 0,
+    'name': "",
     'target': "",
     'binaries': [],
     'functions': [],
@@ -160,7 +161,8 @@ sampleParser.loadVMMap(fromBuffer=vmmapString)
 del vmmaps
 del vmmapString
 
-profile['target'] = args.name if args.name else sampleParser.binaries[0]['binary']
+profile['name'] = args.name if args.name else sampleParser.binaries[0]['binary']
+profile['target'] = sampleParser.binaries[0]['binary']
 
 i = 0
 prevThreadCpuTimes = {}
