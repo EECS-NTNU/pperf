@@ -8,10 +8,9 @@ import pickle
 import bz2
 import profileLib
 
-_profileVersion = "0.3"
 
 profile = {
-    'version': _profileVersion,
+    'version': profileLib.profileVersion,
     'samples': 0,
     'samplingTime': 0,
     'latencyTime': 0,
@@ -26,6 +25,7 @@ profile = {
 
 parser = argparse.ArgumentParser(description="Parse profiles from intrvelf sampler.")
 parser.add_argument("profile", help="profile from intrvelf")
+parser.add_argument("-n", "--name", help="name profile")
 parser.add_argument("-v", "--volts", help="set pmu voltage", type=float)
 parser.add_argument("-s", "--search-path", help="add search path", action="append")
 parser.add_argument("-o", "--output", help="write postprocessed profile")
@@ -94,7 +94,7 @@ useVolts = profile['volts']
 
 try:
     (wallTimeUs, latencyTimeUs, sampleCount, pmuDataSize, vmmapCount) = struct.unpack_from(endianess + 'QQQII', binProfile, binOffset)
-    binOffset += 8 + 8 + 8 + 4 + 4 
+    binOffset += 8 + 8 + 8 + 4 + 4
 except Exception as e:
     print("Unexpected end of file!")
     sys.exit(1)
@@ -160,7 +160,7 @@ sampleParser.loadVMMap(fromBuffer=vmmapString)
 del vmmaps
 del vmmapString
 
-profile['target'] = sampleParser.binaries[0]['binary']
+profile['target'] = args.name if args.name else sampleParser.binaries[0]['binary']
 
 i = 0
 prevThreadCpuTimes = {}

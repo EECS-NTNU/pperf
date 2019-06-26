@@ -8,12 +8,11 @@ import bz2
 import csv
 import profileLib
 
-_profileVersion = "0.3"
 
 maxPowerSensors = 7
 
 profile = {
-    'version': _profileVersion,
+    'version': profileLib.profileVersion,
     'samples': 0,
     'samplingTime': 0,
     'latencyTime': 0,
@@ -29,6 +28,7 @@ profile = {
 parser = argparse.ArgumentParser(description="Parse sthem csv exports.")
 parser.add_argument("csv", help="csv export from sthem")
 parser.add_argument("-p", "--power-sensor", help="power sensor to use", type=int)
+parser.add_argument("-n", "--name", help="name profile")
 parser.add_argument("-s", "--search-path", help="add search path", action="append")
 parser.add_argument("-o", "--output", help="output profile")
 parser.add_argument("-v", "--vmmap", help="vmmap from profiling run")
@@ -92,7 +92,7 @@ sys.stdout.flush()
 sampleParser.loadVMMap(args.vmmap)
 print("finished")
 
-profile['target'] = sampleParser.binaries[0]['binary']
+profile['target'] = args.name if args.name else sampleParser.binaries[0]['binary']
 
 if (args.kallsyms):
     sampleParser.loadKallsyms(args.kallsyms)

@@ -10,7 +10,6 @@ import plotly.graph_objs as go
 import numpy
 import profileLib
 
-_profileVersion = "0.3"
 
 parser = argparse.ArgumentParser(description="Visualize profiles from intrvelf sampler.")
 parser.add_argument("profile", help="postprocessed profile from intrvelf")
@@ -43,8 +42,8 @@ else:
 print("finished")
 
 
-if 'version' not in profile or profile['version'] != _profileVersion:
-    raise Exception(f"Incompatible profile version (required: {_profileVersion})")
+if 'version' not in profile or profile['version'] != profileLib.profileVersion:
+    raise Exception(f"Incompatible profile version (required: {profileLib.profileVersion})")
 
 
 avgSampleLatency = profile['latencyTime'] / profile['samples']

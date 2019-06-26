@@ -12,11 +12,13 @@ import tabulate
 
 import profileLib
 
+aggregateKeyNames = ["pc", "binary", "file", "procedure_mangled", "procedure", "line"]
+
 parser = argparse.ArgumentParser(description="Visualize profiles from intrvelf sampler.")
 parser.add_argument("profiles", help="postprocessed profiles from intrvelf", nargs="+")
-parser.add_argument("-a", "--aggregate-keys", help="list of aggregation and display keys", default="1,3")
+parser.add_argument("-a", "--aggregate-keys", help=f"aggregate after this list (%(default)s) e.g.: {','.join(aggregateKeyNames)}", default="binary,procedure")
 parser.add_argument("-c", "--cpus", help="list of active cpu cores", default="0-3")
-parser.add_argument("-l", "--limit", help="limit output to % of energy/current", type=float, default=0)
+parser.add_argument("-l", "--limit", help="limit output to %% of energy", type=float, default=0)
 parser.add_argument("-t", "--table", help="output csv table")
 parser.add_argument("-p", "--plot", help="plotly html file")
 parser.add_argument("-o", "--output", help="output aggregated profile")
@@ -27,6 +29,7 @@ parser.add_argument("-q", "--quiet", action="store_true", help="do not automatic
 
 
 args = parser.parse_args()
+
 
 if not args.use_cpu_time and not args.use_wall_time:
     args.use_cpu_time = True
@@ -46,7 +49,7 @@ if (not args.profiles) or (len(args.profiles) <= 0):
     sys.exit(1)
 
 useCpus = list(set(profileLib.parseRange(args.cpus)))
-aggregateKeys = profileLib.parseRange(args.aggregate_keys)
+aggregateKeys = [aggregateKeyNames.index(x) for x in args.aggregate_keys.split(',')]
 
 if (max(aggregateKeys) > 5 or min(aggregateKeys) < 0):
     print("ERROR: aggregate keys are out of bounds (0-5)")

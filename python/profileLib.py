@@ -11,8 +11,8 @@ LABEL_UNKNOWN = '_unknown'
 LABEL_FOREIGN = '_foreign'
 LABEL_KERNEL = '_kernel'
 
-aggProfileVersion = 'a0.5'
-profileVersion = '0.3'
+aggProfileVersion = 'a0.6'
+profileVersion = '0.4'
 
 aggTime = 0
 aggPower = 1
@@ -271,8 +271,8 @@ class sampleParser:
         result = [
             srcpc,
             self.binaryMap.index(srcbinary),
-            self._functionMap.index(srcfunction),
             self.fileMap.index(srcfile),
+            self._functionMap.index(srcfunction),
             srcline
         ]
 
@@ -282,17 +282,17 @@ class sampleParser:
     def parseFromSample(self, sample):
         if sample[1] not in self.binaryMap:
             self.binaryMap.append(sample[1])
-        if sample[2] not in self._functionMap:
-            self.functionMap.append([sample[2], sample[3]])
-            self._functionMap.append(sample[2])
-        if sample[4] not in self.fileMap:
-            self.fileMap.append(sample[4])
+        if sample[2] not in self.fileMap:
+            self.fileMap.append(sample[2])
+        if sample[3] not in self._functionMap:
+            self.functionMap.append([sample[3], sample[4]])
+            self._functionMap.append(sample[3])
 
         result = [
             sample[0],
             self.binaryMap.index(sample[1]),
-            self._functionMap.index(sample[2]),
-            self.fileMap.index(sample[4]),
+            self.fileMap.index(sample[2]),
+            self._functionMap.index(sample[3]),
             sample[5]
         ]
         return result
@@ -302,9 +302,6 @@ class sampleParser:
 
     def getFunctionMap(self):
         return self.functionMap
-
-    def getFunctionDemangledMap(self):
-        return self.FunctionDemangledMap
 
     def getFileMap(self):
         return self.fileMap
@@ -324,13 +321,13 @@ class sampleFormatter():
         return [
             data[0],
             self.binaryMap[data[1]],
-            self.functionMap[data[2]][0],
-            self.functionMap[data[2]][1],
-            self.fileMap[data[3]],
+            self.fileMap[data[2]],
+            self.functionMap[data[3]][0],
+            self.functionMap[data[3]][1],
             data[4]
         ]
 
-    def formatData(self, data, displayKeys=[1, 3], delimiter=":", doubleSanitizer=[LABEL_FOREIGN, LABEL_UNKNOWN, LABEL_KERNEL], lStringStrip=False, rStringStrip=False):
+    def formatData(self, data, displayKeys=[1, 4], delimiter=":", doubleSanitizer=[LABEL_FOREIGN, LABEL_UNKNOWN, LABEL_KERNEL], lStringStrip=False, rStringStrip=False):
         return self.sanitizeOutput(
             self.formatSample(self.getSample(data), displayKeys, delimiter),
             delimiter,
@@ -339,7 +336,7 @@ class sampleFormatter():
             rStringStrip
         )
 
-    def formatSample(self, sample, displayKeys=[1, 3], delimiter=":"):
+    def formatSample(self, sample, displayKeys=[1, 4], delimiter=":"):
         return delimiter.join([f"0x{sample[x]:x}" if x == 0 else str(sample[x]) for x in displayKeys])
 
     def sanitizeOutput(self, output, delimiter=":", doubleSanitizer=[LABEL_FOREIGN, LABEL_UNKNOWN, LABEL_KERNEL], lStringStrip=False, rStringStrip=False):
