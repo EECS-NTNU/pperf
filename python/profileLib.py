@@ -24,7 +24,8 @@ aggSamples = 3
 aggExecs = 4
 aggLabel = 5
 
-crossCompile = None
+disableCache = False if 'DISABLE_CACHE' not in os.environ else (True if os.environ['DISABLE_CACHE'] == '1' else False)
+crossCompile = "" if 'CROSS_COMPILE' not in os.environ else os.environ['CROSS_COMPILE']
 _cppfiltCache = {}
 
 
@@ -46,8 +47,6 @@ def demangleFunction(function):
     global crossCompile
     if function in _cppfiltCache:
         return _cppfiltCache[function]
-    if crossCompile is None:
-        crossCompile = "" if 'CROSS_COMPILE' not in os.environ else os.environ['CROSS_COMPILE']
     cppfilt = subprocess.run(f"{crossCompile}c++filt -i '{function}'", shell=True, stdout=subprocess.PIPE)
     cppfilt.check_returncode()
 
@@ -57,8 +56,6 @@ def demangleFunction(function):
 
 def batchAddr2line(elf, pcs, demangle=True):
     global crossCompile
-    if crossCompile is None:
-        crossCompile = "" if 'CROSS_COMPILE' not in os.environ else os.environ['CROSS_COMPILE']
     tmpFile, tmpFilename = tempfile.mkstemp()
     result = {}
     try:
@@ -70,7 +67,7 @@ def batchAddr2line(elf, pcs, demangle=True):
             parsed = numpy.array(addr2line.stdout.decode('utf-8').split("\n"), dtype=object)[:-1].reshape((-1, 3))
             for x in parsed:
                 # File, Func, Demangled, Line
-                subresult = [LABEL_FOREIGN, LABEL_FOREIGN, LABEL_FOREIGN, 0]
+                subresult = [LABEL_UNKNOWN, LABEL_UNKNOWN, LABEL_UNKNOWN, 0]
                 parsedPc = int(x[0], 0)
                 fileAndLine = x[2].split(':')
                 fileAndLine[1] = fileAndLine[1].split(' ')[0]
@@ -100,8 +97,6 @@ def addr2line(elf, pc, demangle=True):
     srcdemangled = LABEL_FOREIGN
     srcline = 0
 
-    if crossCompile is None:
-        crossCompile = "" if 'CROSS_COMPILE' not in os.environ else os.environ['CROSS_COMPILE']
     addr2line = subprocess.run(f"{crossCompile}addr2line -f -s -e {elf} -a {pc:x}", shell=True, stdout=subprocess.PIPE)
     addr2line.check_returncode()
     result = addr2line.stdout.decode('utf-8').split("\n")
@@ -166,7 +161,6 @@ class elfCache:
             pickle.dump(self.caches[elf], open(cacheName, "wb"), pickle.HIGHEST_PROTOCOL)
             lock.release()
 
-
     def getCacheName(self, elf):
         hasher = hashlib.md5()
         with open(elf, 'rb') as afile:
@@ -185,8 +179,9 @@ class sampleParser:
     searchPaths = []
     _fetched_pc_data = {}
     cache = None
-   
+
     def __init__(self, labelUnknown=LABEL_UNKNOWN, labelForeign=LABEL_FOREIGN, labelKernel=LABEL_KERNEL, useDemangling=True, pcHeuristic=False):
+        global disableCache
         self.binaryMap = [labelUnknown, labelForeign]
         self.functionMap = [[labelUnknown, labelUnknown], [labelForeign, labelForeign]]
         self._functionMap = [x[0] for x in self.functionMap]
@@ -198,7 +193,7 @@ class sampleParser:
         self.searchPaths = []
         self._fetched_pc_data = {}
         self._pc_heuristic = pcHeuristic
-        self.cache = elfCache()
+        self.cache = elfCache() if not disableCache else None
 
     def addSearchPath(self, path):
         if not isinstance(path, list):
@@ -345,7 +340,7 @@ class sampleParser:
                         srcdemangled = f[1]
                         break
             else:
-                srcfile, srcfunction, srcdemangled, srcline = self.cache.getDataFromPC(binary['path'], srcpc)
+                srcfile, srcfunction, srcdemangled, srcline = addr2line(binary['path'], srcpc) if self.cache is None else self.cache.getDataFromPC(binary['path'], srcpc)
 
         if srcbinary not in self.binaryMap:
             self.binaryMap.append(srcbinary)
