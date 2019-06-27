@@ -6,6 +6,9 @@ import os
 import subprocess
 import hashlib
 import pickle
+from filelock import FileLock
+import tempfile
+import numpy
 
 LABEL_UNKNOWN = '_unknown'
 LABEL_FOREIGN = '_foreign'
@@ -21,6 +24,9 @@ aggSamples = 3
 aggExecs = 4
 aggLabel = 5
 
+crossCompile = None
+_cppfiltCache = {}
+
 
 def parseRange(stringRange):
     result = []
@@ -35,41 +41,137 @@ def parseRange(stringRange):
     return result
 
 
+def demangleFunction(function):
+    global _cppfiltCache
+    global crossCompile
+    if function in _cppfiltCache:
+        return _cppfiltCache[function]
+    if crossCompile is None:
+        crossCompile = "" if 'CROSS_COMPILE' not in os.environ else os.environ['CROSS_COMPILE']
+    cppfilt = subprocess.run(f"{crossCompile}c++filt -i '{function}'", shell=True, stdout=subprocess.PIPE)
+    cppfilt.check_returncode()
+
+    _cppfiltCache[function] = cppfilt.stdout.decode('utf-8').split("\n")[0]
+    return _cppfiltCache[function]
+
+
+def batchAddr2line(elf, pcs, demangle=True):
+    global crossCompile
+    if crossCompile is None:
+        crossCompile = "" if 'CROSS_COMPILE' not in os.environ else os.environ['CROSS_COMPILE']
+    tmpFile, tmpFilename = tempfile.mkstemp()
+    result = {}
+    try:
+        with os.fdopen(tmpFile, 'w') as tmp:
+            for pc in pcs:
+                tmp.write(f"0x{pc:x}\n")
+            addr2line = subprocess.run(f"{crossCompile}addr2line -f -s -a -e {elf} @{tmpFilename}", shell=True, stdout=subprocess.PIPE)
+            addr2line.check_returncode()
+            parsed = numpy.array(addr2line.stdout.decode('utf-8').split("\n"), dtype=object)[:-1].reshape((-1, 3))
+            for x in parsed:
+                # File, Func, Demangled, Line
+                subresult = [LABEL_FOREIGN, LABEL_FOREIGN, LABEL_FOREIGN, 0]
+                parsedPc = int(x[0], 0)
+                fileAndLine = x[2].split(':')
+                fileAndLine[1] = fileAndLine[1].split(' ')[0]
+                if not fileAndLine[0] == '??':
+                    subresult[0] = fileAndLine[0]
+                if not x[1] == '??':
+                    subresult[1] = x[1]
+                if not fileAndLine[1] == '?':
+                    subresult[3] = int(fileAndLine[1])
+
+                subresult[2] = subresult[1]
+
+                if (demangle and subresult[1] != LABEL_UNKNOWN):
+                    subresult[2] = demangleFunction(subresult[1])
+
+                result[parsedPc] = subresult
+    finally:
+        os.remove(tmpFilename)
+
+    return result
+
+
+def addr2line(elf, pc, demangle=True):
+    global crossCompile
+    srcfile = LABEL_FOREIGN
+    srcfunction = LABEL_FOREIGN
+    srcdemangled = LABEL_FOREIGN
+    srcline = 0
+
+    if crossCompile is None:
+        crossCompile = "" if 'CROSS_COMPILE' not in os.environ else os.environ['CROSS_COMPILE']
+    addr2line = subprocess.run(f"{crossCompile}addr2line -f -s -e {elf} -a {pc:x}", shell=True, stdout=subprocess.PIPE)
+    addr2line.check_returncode()
+    result = addr2line.stdout.decode('utf-8').split("\n")
+    fileAndLine = result[2].split(':')
+    fileAndLine[1] = fileAndLine[1].split(' ')[0]
+    if not result[1] == '??':
+        srcfunction = result[1]
+    if not fileAndLine[0] == '??':
+        srcfile = fileAndLine[0]
+    if not fileAndLine[1] == '?':
+        srcline = int(fileAndLine[1])
+
+    srcdemangled = srcfunction
+
+    if (demangle and srcfunction != LABEL_UNKNOWN):
+        srcdemangled = demangleFunction(srcfunction)
+
+    return [srcfile, srcfunction, srcdemangled, srcline]
+
+
 # Work in Progress
 class elfCache:
-    cacheFolder = "~/.cache/profileLib/"
+    cacheFolder = ".cache"
+
+    caches = {}
 
     def __init__(self):
         if not os.path.isdir(self.cacheFolder):
             os.makedirs(self.cacheFolder)
 
-    def md5Of(self, path):
+    def getDataFromPC(self, elf, pc):
+        if elf not in self.caches:
+            self.openOrCreateCache(elf)
+        if pc not in self.caches[elf]:
+            print(f"WARNING: pc does not exist in cache for file {elf}")
+            return addr2line(elf, pc)
+        else:
+            return self.caches[elf][pc]
+
+    def openOrCreateCache(self, elf):
+        cacheName = self.getCacheName(elf)
+        lock = FileLock(cacheName + ".lock")
+        lock.acquire()
+        if os.path.isfile(cacheName):
+            lock.release()
+            try:
+                self.caches[elf] = pickle.load(open(cacheName, mode="rb"))
+            except Exception:
+                os.remove(cacheName)
+                self.openOrCreateCache(elf)
+        else:
+            self.caches[elf] = {}
+            readelf = subprocess.run(f"readelf -lW {elf} 2>/dev/null | awk '$0 ~ /LOAD.+ R.E 0x/ {{print $3\":\"$6}}'", shell=True, stdout=subprocess.PIPE)
+            readelf.check_returncode()
+            maps = readelf.stdout.decode('utf-8').split('\n')[:-1]
+            for map in maps:
+                start = int(map.split(":")[0], 0)
+                end = int(map.split(":")[1], 0)
+                print(f"\rCreating address cache for {elf} from 0x{start:x} to 0x{end:x}...")
+                self.caches[elf].update(batchAddr2line(elf, list(range(start, end))))
+
+            pickle.dump(self.caches[elf], open(cacheName, "wb"), pickle.HIGHEST_PROTOCOL)
+            lock.release()
+
+
+    def getCacheName(self, elf):
         hasher = hashlib.md5()
-        with open(path, 'rb') as afile:
+        with open(elf, 'rb') as afile:
             hasher.update(afile.read())
-        return hasher.hexdigest()
-
-    def cacheExists(self, path):
-        md5 = self.md5Of(path)
-        if os.path.isfile(self.cacheFolder + md5):
-            return True
-        return False
-
-    def createCache(self, path):
-        cache = {}
-        size = os.stat(path).st_size
-        for i in range(0, size):
-            pass
-        pickle.dump(cache, self.cacheFolder + self.md5Of(path), pickle.HIGHEST_PROTOCOL)
-
-    def loadCache(self, path):
-        if not self.cacheExists(path):
-            self.createCache(path)
-        return pickle.load(open(self.cacheFolder + self.md5Of(path), mode="rb"))
-
-    def cleanCache(self):
-        os.rmdir(self.cacheFolder)
-        os.makedirs(self.cacheFolder)
+        return self.cacheFolder + '/elfcache_' + hasher.hexdigest()
 
 
 class sampleParser:
@@ -82,8 +184,8 @@ class sampleParser:
     fileMap = []
     searchPaths = []
     _fetched_pc_data = {}
-    _cross_compile = ""
-
+    cache = None
+   
     def __init__(self, labelUnknown=LABEL_UNKNOWN, labelForeign=LABEL_FOREIGN, labelKernel=LABEL_KERNEL, useDemangling=True, pcHeuristic=False):
         self.binaryMap = [labelUnknown, labelForeign]
         self.functionMap = [[labelUnknown, labelUnknown], [labelForeign, labelForeign]]
@@ -95,8 +197,8 @@ class sampleParser:
         self.LABEL_FOREIGN = labelForeign
         self.searchPaths = []
         self._fetched_pc_data = {}
-        self._cross_compile = "" if 'CROSS_COMPILE' not in os.environ else os.environ['CROSS_COMPILE']
         self._pc_heuristic = pcHeuristic
+        self.cache = elfCache()
 
     def addSearchPath(self, path):
         if not isinstance(path, list):
@@ -222,9 +324,9 @@ class sampleParser:
 
         srcpc = pc
         srcbinary = self.LABEL_FOREIGN
+        srcfile = self.LABEL_FOREIGN
         srcfunction = self.LABEL_FOREIGN
         srcdemangled = self.LABEL_FOREIGN
-        srcfile = self.LABEL_FOREIGN
         srcline = 0
 
         binary = self.getBinaryFromPC(pc)
@@ -243,22 +345,7 @@ class sampleParser:
                         srcdemangled = f[1]
                         break
             else:
-                addr2line = subprocess.run(f"{self._cross_compile}addr2line -f -s -e {binary['path']} -a {srcpc:x}", shell=True, stdout=subprocess.PIPE)
-                addr2line.check_returncode()
-                result = addr2line.stdout.decode('utf-8').split("\n")
-                fileAndLine = result[2].split(':')
-                fileAndLine[1] = fileAndLine[1].split(' ')[0]
-                if not result[1] == '??':
-                    srcfunction = result[1]
-                if not fileAndLine[0] == '??':
-                    srcfile = fileAndLine[0]
-                if not fileAndLine[1] == '?':
-                    srcline = int(fileAndLine[1])
-
-                if (srcfunction != self.LABEL_UNKNOWN):
-                    cppfilt = subprocess.run(f"{self._cross_compile}c++filt -i '{srcfunction}'", shell=True, stdout=subprocess.PIPE)
-                    cppfilt.check_returncode()
-                    srcdemangled = cppfilt.stdout.decode('utf-8').split("\n")[0]
+                srcfile, srcfunction, srcdemangled, srcline = self.cache.getDataFromPC(binary['path'], srcpc)
 
         if srcbinary not in self.binaryMap:
             self.binaryMap.append(srcbinary)
