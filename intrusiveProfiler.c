@@ -174,9 +174,10 @@ void help(char const *exec, char const opt, char const *optarg) {
     fprintf(out, "  -o, --output <file>       write to file\n");
     fprintf(out, "  -p, --pmu-arg <pmu>       pmu argument\n");
     fprintf(out, "  -f, --frequency <hertz>   sampling frequency\n");
+    fprintf(out, "  -r, --randomize           randomize start sample\n");
+    fprintf(out, "  --core-isolation          sample on isolated core\n");
     fprintf(out, "  --fifo <priority>         set fifo scheduler with priority\n");
     fprintf(out, "  --rr <priority>           set rr scheduler with priority\n");
-    fprintf(out, "  --core-isolation          sample on isolated core\n");
     fprintf(out, "  -v, --verbose             verbsoe output at the end\n");
     fprintf(out, "  -h, --help                shows help\n");
     fprintf(out, "\n");
@@ -240,6 +241,22 @@ int scheduleInterruptNow(struct timerData *timer) {
     return 0;
 }
 
+int scheduleInterruptIn(struct timerData *timer, struct timespec interrupt) {
+    if (timer->active == 0)
+        return 0;
+
+    timer->time.it_value.tv_nsec = interrupt.tv_nsec;
+    timer->time.it_value.tv_sec = interrupt.tv_sec;
+    debug_printf("[DEBUG] next timer in %llu us\n", timespecToMicroseconds(&timer->time.it_value));
+
+    if (timespecToNanoseconds(&timer->time.it_value) == 0)
+        return scheduleInterruptNow(timer);
+
+    if (timer_settime(timer->timer, 0, &timer->time, NULL) != 0)
+        return 1;
+    return 0;
+}
+
 int scheduleNextInterrupt(struct timerData *timer) {
     static struct timespec nextPlannedInterrupt;
     static struct timespec currentTime;
@@ -249,7 +266,7 @@ int scheduleNextInterrupt(struct timerData *timer) {
     clock_gettime(CLOCK_REALTIME, &currentTime);
     timespecAdd(&nextPlannedInterrupt, &_callback_data.lastInterrupt, &timer->samplingInterval);
     timespecSub(&timer->time.it_value, &nextPlannedInterrupt, &currentTime);
-    debug_printf("[DEBUG] next timer in %llu us\n", timespecToMicroseconds(&timer->time.it_value));
+    debug_printf("[DEBUG] next timer in %llu ns\n", timespecToNanoseconds(&timer->time.it_value));
 
     if (timespecToNanoseconds(&timer->time.it_value) == 0)
         return scheduleInterruptNow(timer);
@@ -306,25 +323,27 @@ int main(int const argc, char **argv) {
     char *pmuArg = NULL;
     bool verboseOutput = 0;
     bool coreIsolation = 0;
+    bool randomize = 0;
     unsigned int *onlineCPUs = NULL;
     unsigned int nCPUs = 0;
-    double samplingFrequency = 10000;
+    double samplingFrequency = 1000;
     int rr = 0;
     int fifo = 0;
     
     static struct option const long_options[] =  {
         {"help",           no_argument,       0, 'h'},
         {"verbose",        no_argument,       0, 'v'},
+        {"randomize",      no_argument,       0, 'r'},
         {"core-isolation", no_argument,       0, 'i'},
         {"pmu-arg",        required_argument, 0, 'p'},
         {"fifo",           required_argument, 0, 'x'},
-        {"rr",             required_argument, 0, 'r'},
+        {"rr",             required_argument, 0, 'y'},
         {"frequency",      required_argument, 0, 'f'},
         {"output",         required_argument, 0, 'o'},
         {0, 0, 0, 0}
     };
 
-    static char const * short_options = "hvf:o:p:r:";
+    static char const * short_options = "hvf:o:p:r";
 
     while (1) {
         char *endptr;
@@ -357,7 +376,7 @@ int main(int const argc, char **argv) {
                 return 1;
             }
             break;
-        case 'r':
+        case 'y':
             rr = strtol(optarg, &endptr, 10);
             if (endptr == optarg || rr < 1 || rr > 99) {
                 help(argv[0], c, optarg);
@@ -383,6 +402,9 @@ int main(int const argc, char **argv) {
                 help(argv[0], c, optarg);
                 return 1;
             }
+            break;
+        case 'r':
+            randomize = true;
             break;
         case 'i':
             coreIsolation = true;
@@ -602,7 +624,12 @@ int main(int const argc, char **argv) {
     }
 
     // first sample as soon as possible
-    scheduleInterruptNow(&timer);
+    if (randomize) {
+        srandom(time(NULL));
+        scheduleInterruptIn(&timer, NanosecondsToTimespec(timespecToNanoseconds(&timer.samplingInterval) * ((double) random() / RAND_MAX)));
+    } else {
+        scheduleInterruptNow(&timer);
+    }
 
     long r;
     do {
@@ -704,7 +731,7 @@ int main(int const argc, char **argv) {
         clock_gettime(CLOCK_REALTIME, &sampleWallTime);
 #ifndef PC_ONLY
         pmuRead(samplePMUData);
-        debug_printf("[sample] PMU Value: %f\n", *samplePMUValue);
+        debug_printf("[sample] PMU Data Read\n");
 #endif
 
         unsigned int i = 0;

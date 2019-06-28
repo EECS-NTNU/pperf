@@ -359,7 +359,7 @@ if (args.plot):
 
     fig['layout'] = go.Layout(
         title=go.layout.Title(
-            text=f"{header}, {baselineProfile['target']}, Frequency {baselineProfile['samples'] / baselineProfile['samplingTime']:.2f} Hz, Time {baselineProfile['samplingTime']:.2f} s, Energy {baselineChart['fullTotals'][cmpEnergy]:.2f} J, Latency {baselineProfile['latencyTime'] * 1000000 / baselineProfile['samples']:.2f} us",
+            text=f"{header}, {baselineProfile['name']}, Frequency {baselineProfile['samples'] / baselineProfile['samplingTime']:.2f} Hz, Time {baselineProfile['samplingTime']:.2f} s, Energy {baselineChart['fullTotals'][cmpEnergy]:.2f} J, Latency {baselineProfile['latencyTime'] * 1000000 / baselineProfile['samples']:.2f} us",
             xref='paper',
             x=0
         ),

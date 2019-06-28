@@ -52,33 +52,33 @@ void timespecAddStore(struct timespec *result, struct timespec *x) {
 }
 
 void timespecSub (struct timespec *result, struct timespec *x, struct timespec *y) {
-  if (x->tv_nsec < y->tv_nsec) {
-    int nsec = (y->tv_nsec - x->tv_nsec) / 1000000000 + 1;
-    y->tv_nsec -= 1000000000 * nsec;
-    y->tv_sec += nsec;
-  }
-  if (x->tv_nsec - y->tv_nsec > 1000000000) {
-    int nsec = (x->tv_nsec - y->tv_nsec) / 1000000000;
-    y->tv_nsec += 1000000000 * nsec;
-    y->tv_sec -= nsec;
-  }
-  result->tv_sec = x->tv_sec - y->tv_sec;
-  result->tv_nsec = x->tv_nsec - y->tv_nsec;
+    if (x->tv_nsec < y->tv_nsec) {
+        int nsec = (y->tv_nsec - x->tv_nsec) / 1000000000 + 1;
+        y->tv_nsec -= 1000000000 * nsec;
+        y->tv_sec += nsec;
+    }
+    if (x->tv_nsec - y->tv_nsec > 1000000000) {
+        int nsec = (x->tv_nsec - y->tv_nsec) / 1000000000;
+        y->tv_nsec += 1000000000 * nsec;
+        y->tv_sec -= nsec;
+    }
+    result->tv_sec = x->tv_sec - y->tv_sec;
+    result->tv_nsec = x->tv_nsec - y->tv_nsec;
 }
 
 void timespecSubStore (struct timespec *result, struct timespec *x) {
-  if (result->tv_nsec < x->tv_nsec) {
-    int nsec = (x->tv_nsec - result->tv_nsec) / 1000000000 + 1;
-    x->tv_nsec -= 1000000000 * nsec;
-    x->tv_sec += nsec;
-  }
-  if (result->tv_nsec - x->tv_nsec > 1000000000) {
-    int nsec = (result->tv_nsec - x->tv_nsec) / 1000000000;
-    x->tv_nsec += 1000000000 * nsec;
-    x->tv_sec -= nsec;
-  }
-  result->tv_sec -= x->tv_sec;
-  result->tv_nsec -= x->tv_nsec;
+    if (result->tv_nsec < x->tv_nsec) {
+        int nsec = (x->tv_nsec - result->tv_nsec) / 1000000000 + 1;
+        x->tv_nsec -= 1000000000 * nsec;
+        x->tv_sec += nsec;
+    }
+    if (result->tv_nsec - x->tv_nsec > 1000000000) {
+        int nsec = (result->tv_nsec - x->tv_nsec) / 1000000000;
+        x->tv_nsec += 1000000000 * nsec;
+        x->tv_sec -= nsec;
+    }
+    result->tv_sec -= x->tv_sec;
+    result->tv_nsec -= x->tv_nsec;
 }
 
 
@@ -96,7 +96,7 @@ struct timespec tsAdd(struct timespec x, struct timespec y) {
 
 unsigned long long timespecToNanoseconds(struct timespec *t) {
     if ((t->tv_sec < 0) || ((t->tv_sec ==0) && (t->tv_nsec < 0)))
-       return 0;
+      return 0;
     return (t->tv_sec * 1000000000) + t->tv_nsec;
 }
 
@@ -110,6 +110,38 @@ unsigned long long timepsecToMilliseconds(struct timespec *t) {
 
 unsigned long long timespecToSeconds(struct timespec *t) {
     return t->tv_sec;
+}
+
+struct timespec NanosecondsToTimespec(unsigned long long x) {
+     struct timespec result = {
+                               .tv_nsec = x % 1000000000,
+                               .tv_sec = x / 1000000000
+     };
+     return result;
+}
+
+struct timespec MicrosecondsToTimespec(unsigned long long x) {
+     struct timespec result = {
+                               .tv_nsec = (x % 1000000) * 1000,
+                               .tv_sec = x / 1000000
+     };
+     return result;
+}
+
+struct timespec MillisecondsToTimespec(unsigned long long x) {
+     struct timespec result = {
+                               .tv_nsec = (x % 1000) * 1000000,
+                               .tv_sec = x / 1000
+     };
+     return result;
+}
+
+struct timespec SecondsToTimespec(unsigned long long x) {
+     struct timespec result = {
+                               .tv_nsec = 0,
+                               .tv_sec = x
+     };
+     return result;
 }
 
 void frequencyToTimespec(struct timespec *t, double freq) {
