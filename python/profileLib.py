@@ -62,28 +62,28 @@ def batchAddr2line(elf, pcs, demangle=True):
         with os.fdopen(tmpFile, 'w') as tmp:
             for pc in pcs:
                 tmp.write(f"0x{pc:x}\n")
-            addr2line = subprocess.run(f"{crossCompile}addr2line -f -s -a -e {elf} @{tmpFilename}", shell=True, stdout=subprocess.PIPE)
-            addr2line.check_returncode()
-            parsed = numpy.array(addr2line.stdout.decode('utf-8').split("\n"), dtype=object)[:-1].reshape((-1, 3))
-            for x in parsed:
-                # File, Func, Demangled, Line
-                subresult = [LABEL_UNKNOWN, LABEL_UNKNOWN, LABEL_UNKNOWN, 0]
-                parsedPc = int(x[0], 0)
-                fileAndLine = x[2].split(':')
-                fileAndLine[1] = fileAndLine[1].split(' ')[0]
-                if not fileAndLine[0] == '??':
-                    subresult[0] = fileAndLine[0]
-                if not x[1] == '??':
-                    subresult[1] = x[1]
-                if not fileAndLine[1] == '?':
-                    subresult[3] = int(fileAndLine[1])
+        addr2line = subprocess.run(f"{crossCompile}addr2line -f -s -a -e {elf} @{tmpFilename}", shell=True, stdout=subprocess.PIPE)
+        addr2line.check_returncode()
+        parsed = numpy.array(addr2line.stdout.decode('utf-8').split("\n"), dtype=object)[:-1].reshape((-1, 3))
+        for x in parsed:
+            # File, Func, Demangled, Line
+            subresult = [LABEL_UNKNOWN, LABEL_UNKNOWN, LABEL_UNKNOWN, 0]
+            parsedPc = int(x[0], 0)
+            fileAndLine = x[2].split(':')
+            fileAndLine[1] = fileAndLine[1].split(' ')[0]
+            if not fileAndLine[0] == '??':
+                subresult[0] = fileAndLine[0]
+            if not x[1] == '??':
+                subresult[1] = x[1]
+            if not fileAndLine[1] == '?':
+                subresult[3] = int(fileAndLine[1])
 
-                subresult[2] = subresult[1]
+            subresult[2] = subresult[1]
 
-                if (demangle and subresult[1] != LABEL_UNKNOWN):
-                    subresult[2] = demangleFunction(subresult[1])
+            if (demangle and subresult[1] != LABEL_UNKNOWN):
+                subresult[2] = demangleFunction(subresult[1])
 
-                result[parsedPc] = subresult
+            result[parsedPc] = subresult
     finally:
         os.remove(tmpFilename)
 
@@ -131,7 +131,7 @@ class elfCache:
         if elf not in self.caches:
             self.openOrCreateCache(elf)
         if pc not in self.caches[elf]:
-            print(f"WARNING: pc does not exist in cache for file {elf}")
+            print(f"WARNING: 0x{pc:x} does not exist in cache for file {elf}")
             return addr2line(elf, pc)
         else:
             return self.caches[elf][pc]
