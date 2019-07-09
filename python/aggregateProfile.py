@@ -9,7 +9,7 @@ import plotly.graph_objs as go
 import numpy
 import textwrap
 import tabulate
-
+import re
 import profileLib
 
 aggregateKeyNames = ["pc", "binary", "file", "procedure_mangled", "procedure", "line"]
@@ -17,7 +17,6 @@ aggregateKeyNames = ["pc", "binary", "file", "procedure_mangled", "procedure", "
 parser = argparse.ArgumentParser(description="Visualize profiles from intrvelf sampler.")
 parser.add_argument("profiles", help="postprocessed profiles from intrvelf", nargs="+")
 parser.add_argument("-a", "--aggregate-keys", help=f"aggregate after this list (%(default)s) e.g.: {','.join(aggregateKeyNames)}", default="binary,procedure")
-parser.add_argument("-c", "--cpus", help="list of active cpu cores", default="0-3")
 parser.add_argument("-l", "--limit", help="limit output to %% of energy", type=float, default=0)
 parser.add_argument("-t", "--table", help="output csv table")
 parser.add_argument("-p", "--plot", help="plotly html file")
@@ -48,7 +47,7 @@ if (not args.profiles) or (len(args.profiles) <= 0):
     parser.print_help()
     sys.exit(1)
 
-useCpus = list(set(profileLib.parseRange(args.cpus)))
+
 aggregateKeys = [aggregateKeyNames.index(x) for x in args.aggregate_keys.split(',')]
 
 if (max(aggregateKeys) > 5 or min(aggregateKeys) < 0):
@@ -111,7 +110,8 @@ for fileProfile in args.profiles:
     threadLocations = {}
     prevSampleWallTime = None
     for sample in profile['profile']:
-        # activeCores = min(len(sample[2]), len(useCpus))
+        activeCores = min(len(sample[2]), profile['cpus'])
+
         if prevSampleWallTime is None:
             prevSampleWallTime = sample[1]
 
@@ -129,6 +129,8 @@ for fileProfile in args.profiles:
             if args.account_latency:
                 useSampleTime = max(useSampleTime - avgLatencyTime, 0.0)
 
+            cpuShare = (useSampleTime / (sampleWallTime * activeCores)) if sampleWallTime != 0 else 0
+
             sampleData = sampleFormatter.getSample(thread[2])
 
             aggregateIndex = sampleFormatter.formatSample(sampleData, displayKeys=aggregateKeys)
@@ -138,14 +140,14 @@ for fileProfile in args.profiles:
             if aggregateIndex not in subAggregate:
                 subAggregate[aggregateIndex] = [
                     useSampleTime,  # total execution time
-                    sample[0] * useSampleTime,  # energy (later power)
+                    sample[0] * cpuShare * useSampleTime,  # energy (later power)
                     1,
                     1,
                     sampleFormatter.sanitizeOutput(aggregateIndex, lStringStrip=aggregatedProfile['target'])
                 ]
             else:
                 subAggregate[aggregateIndex][0] += useSampleTime
-                subAggregate[aggregateIndex][1] += sample[0] * useSampleTime
+                subAggregate[aggregateIndex][1] += sample[0] * cpuShare * useSampleTime
                 subAggregate[aggregateIndex][2] += 1
                 if threadLocations[threadId] != aggregateIndex:
                     subAggregate[aggregateIndex][3] += 1
@@ -223,6 +225,8 @@ if args.limit is not 0:
 
 labels = [f"{x:.4f} s, {x * 1000/a:.3f} ms, {s:.2f} W" + f", {y * 100 / totalEnergy if totalEnergy > 0 else 0:.2f}%" for x, a, s, y in zip(times, execs, powers, energies)]
 
+
+#aggregationLabel = [ re.sub(r'\(.*\)$', '', x) for x in aggregationLabel ] 
 
 if (args.plot):
     pAggregationLabel = [textwrap.fill(x, 64).replace('\n', '<br />') for x in aggregationLabel]

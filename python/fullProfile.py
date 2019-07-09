@@ -90,13 +90,16 @@ if not args.no_threads:
     sys.stdout.flush()
     threadNone = [None] * len(samples)
     threadMap = {}
+    prevSampleWallTime = None
     for index, sample in enumerate(samples):
         # Determine possible active cores
         activeCores = min(len(sample[2]), cpus)
-        sampleWallTime = sample[0]
-        for threadSample in sample[2]:
-            threadSampleCpuTime = threadSample[1]
+        if prevSampleWallTime is None:
+            prevSampleWallTime = sample[1]
 
+        sampleWallTime = sample[1] - prevSampleWallTime
+        prevSampleWallTime = sample[1]
+        for threadSample in sample[2]:
             if threadSample[0] in threadMap:
                 threadIndex = threadMap[threadSample[0]]
             else:
@@ -105,7 +108,7 @@ if not args.no_threads:
                 threads.append(list.copy(threadNone))
                 threadDisplay.append(list.copy(threadNone))
 
-            cpuShare = (threadSampleCpuTime / (sampleWallTime * activeCores)) if sampleWallTime != 0 else 0
+            cpuShare = (threadSample[1] / (sampleWallTime * activeCores)) if sampleWallTime != 0 else 0
 
             threads[threadIndex][index] = threadIndex + 1
             threadDisplay[threadIndex][index] = sampleFormatter.sanitizeOutput(sampleFormatter.formatData(threadSample[2]), lStringStrip=profile['target']) + f", {cpuShare:.2f}"
