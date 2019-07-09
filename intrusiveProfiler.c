@@ -14,6 +14,12 @@
 #error "Architecture not supported!"
 #endif
 
+
+//Older Kernel do not have that option
+#ifndef PTRACE_O_EXITKILL
+#define PTRACE_O_EXITKILL 0
+#endif
+
 #define PTRACE_WAIT(target, status) do { \
     do { \
         target = waitpid(-1, &status, __WALL);   \

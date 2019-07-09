@@ -3,10 +3,15 @@ FLAGS = -O3
 
 TARGETS = lynsyn dummy rapl-sysfs
 
+LINKING := -lrt
+
 all: $(TARGETS)
 
-$(TARGETS): % : intrusiveProfiler.o pmu/%.o
-	$(CROSS_COMPILE)$(CC) $(FLAGS) $(INCLUDES) $(DEFINES) $^ -o $@ $(LINKING) -lrt -lusb-1.0
+lynsyn: % : intrusiveProfiler.o pmu/%.o
+	$(CROSS_COMPILE)$(CC) $(FLAGS) $(INCLUDES) $(DEFINES) $^ -o $@ $(LINKING) -lusb-1.0
+
+dummy rapl-sysfs: % : intrusiveProfiler.o pmu/%.o
+	$(CROSS_COMPILE)$(CC) $(FLAGS) $(INCLUDES) $(DEFINES) $^ -o $@ $(LINKING)
 
 pmu/lynsyn.o : %.o : %.c sthem_repository
 	$(CROSS_COMPILE)$(CC) $(FLAGS) $(INCLUDES) -I/usr/include/libusb-1.0/ $(DEFINES) -c $< -o $@
