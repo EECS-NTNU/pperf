@@ -34,27 +34,26 @@ const char *pmuAbout(void) {
 int pmuInit(char *pmuArg) {
   if (pmuArg == NULL)
     goto pmu_no_arg;
+
   char filePath[1024];
-  char *nEndpoint = strtok(pmuArg, ",");
   endpoints = 0;
   raplEndpoints = NULL;
-  FILE *fd;
+
+  char *nEndpoint = strtok(pmuArg, ",");
 
   while(nEndpoint) {
-    if (raplEndpoints == NULL)
-      raplEndpoints = malloc((endpoints + 1) * sizeof(struct raplEndpoint));
-    else
-      raplEndpoints = realloc(raplEndpoints, (endpoints + 1) * sizeof(struct raplEndpoint));
-    if (raplEndpoints == NULL)
-      goto pmu_init_error;
-
+    FILE *fd;
+    unsigned long long energy, maxEnergy;
+    struct timespec currentTime;
+   
     snprintf(filePath, 1024, "%s%s/max_energy_range_uj", raplPath, nEndpoint);
     if (access(filePath, R_OK) == -1)
-      goto pmu_arg_error;
+      goto pmu_invalid_endpoint;
     fd = fopen(filePath, "r");
     if (fd == NULL)
-      goto pmu_arg_error;
-    if (fscanf(fd, "%llu", &raplEndpoints[endpoints].maxEnergy) != 1)
+      goto pmu_invalid_endpoint;
+
+    if (fscanf(fd, "%llu", &maxEnergy) != 1)
       goto pmu_read_error;
     fclose(fd);
    
@@ -64,21 +63,28 @@ int pmuInit(char *pmuArg) {
     fd = fopen(filePath, "r");
     if (fd == NULL)
       goto pmu_arg_error;
-    if (fscanf(fd, "%llu", &raplEndpoints[endpoints].lastEnergy) != 1)
+    if (fscanf(fd, "%llu", &energy) != 1)
       goto pmu_read_error;
 
+    if (raplEndpoints == NULL)
+      raplEndpoints = malloc((endpoints + 1) * sizeof(struct raplEndpoint));
+    else
+      raplEndpoints = realloc(raplEndpoints, (endpoints + 1) * sizeof(struct raplEndpoint));
+    if (raplEndpoints == NULL)
+      goto pmu_init_error;
+
+    clock_gettime(CLOCK_REALTIME, &currentTime);
     raplEndpoints[endpoints].fEnergy = fd;
-    raplEndpoints[endpoints].lastTime = 0;
+    raplEndpoints[endpoints].lastEnergy = energy;
+    raplEndpoints[endpoints].maxEnergy = maxEnergy;
+    raplEndpoints[endpoints].lastTime = (currentTime.tv_sec * 1000000) + (currentTime.tv_nsec / 1000);
     endpoints++;
+  pmu_invalid_endpoint:
     nEndpoint = strtok(NULL, ",");
   }
 
   if (endpoints == 0)
     goto pmu_no_arg;
-
-
-  struct PMUData dummy;
-  pmuRead(&dummy);
 
   return 0;
  pmu_no_arg:
