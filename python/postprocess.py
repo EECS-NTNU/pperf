@@ -33,6 +33,7 @@ parser.add_argument("-o", "--output", help="write postprocessed profile")
 parser.add_argument("-c", "--cpus", help="list of active cpu cores", default="0-3")
 parser.add_argument("-l", "--little-endian", action="store_true", help="parse profile using little endianess")
 parser.add_argument("-b", "--big-endian", action="store_true", help="parse profile using big endianess")
+parser.add_argument("--dump-vmmap", help="dump vmmap to file")
 
 args = parser.parse_args()
 
@@ -155,6 +156,10 @@ print("Reading raw vm maps... finished!")
 del binProfile
 
 vmmapString = '\n'.join([f"{x[0]:x} {x[1]:x} {x[2]}" for x in vmmaps])
+if (args.dump_vmmap):
+    with open(args.dump_vmmap, "w") as f:
+        f.write(vmmapString)
+
 sampleParser = profileLib.sampleParser()
 sampleParser.addSearchPath(args.search_path)
 sampleParser.loadVMMap(fromBuffer=vmmapString)
