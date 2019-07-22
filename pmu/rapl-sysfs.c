@@ -106,12 +106,12 @@ void pmuRead(struct PMUData *data) {
   long long energyDiff;
   struct timespec currentTime;
   data->value = 0;
-  clock_gettime(CLOCK_REALTIME, &currentTime);
-  unsigned long long  time = (currentTime.tv_sec * 1000000) + (currentTime.tv_nsec / 1000);
   for (unsigned int i = 0; i < endpoints; i++) {
     if (freopen(NULL, "r", raplEndpoints[i].fEnergy) == NULL) {
       continue;
     }
+    clock_gettime(CLOCK_REALTIME, &currentTime);
+    unsigned long long  time = (currentTime.tv_sec * 1000000) + (currentTime.tv_nsec / 1000);
     if (fscanf(raplEndpoints[i].fEnergy, "%llu", &energy) != 1) {
       continue;
     }
