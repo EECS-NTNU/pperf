@@ -18,7 +18,7 @@ Options:
 * threads are fully supported, **though fork, vfork and vclone is not supported**!
 * execl, execlp, execle, execv, execvp and execvpe are replacing the current process with new VMMaps and are therefore not supported!
 
-## Profile Header
+## Binary Profile Description
 
 * Included in every profile
 * Magic number defines profile pmu data 
@@ -32,21 +32,9 @@ Options:
 [ 8 bytes / uint64_t ] Total Wall Time
 [ 8 bytes / uint64_t ] CPU Time of Sampler (latency)
 [ 8 bytes / uint64_t ] Number of Samples
-
+[ 4 bytes / uint32_t ] PMU Sample Size in bytes
 [ 4 bytes / uint32_t ] Number of VMMaps
-VMMap{
-    [ 8 bytes / uint64_t ] Address
-    [ 8 bytes / uint64_t ] Size
-    [ 256 bytes / char * ] Label
-} // Repeated "Number of VMMaps" times
-```
 
-### Full Profile
-
-* is written on every sample, does not add any IO buffer (apart from system file buffers)
-* frequency, number of threads and sampling time determines size
-
-```
 Sample{
     [ 8 bytes / uint64_t ] Wall Time (ms)
     [ 8 bytes / double   ] PMU Value
@@ -57,8 +45,13 @@ Sample{
         [ 8 bytes / uint64_t ] CPU Time (ns)
     } // Repeated "Number of Threads" times
 } // Repeated "Number of Samples" times
-```
 
+VMMap{
+    [ 8 bytes / uint64_t ] Address
+    [ 8 bytes / uint64_t ] Size
+    [ 256 bytes / char * ] Label
+} // Repeated "Number of VMMaps" times
+```
 
 ## Python Scripts
 
