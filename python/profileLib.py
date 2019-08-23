@@ -162,10 +162,11 @@ class elfCache:
             lock.release()
 
     def getCacheName(self, elf):
+        global crossCompile
         hasher = hashlib.md5()
         with open(elf, 'rb') as afile:
             hasher.update(afile.read())
-        return self.cacheFolder + '/elfcache_' + hasher.hexdigest()
+        return self.cacheFolder + '/elfcache_' + crossCompile + hasher.hexdigest()
 
 
 class sampleParser:
