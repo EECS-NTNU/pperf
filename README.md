@@ -37,7 +37,7 @@ Options:
 
 Sample{
     [ 8 bytes / uint64_t ] Wall Time (ms)
-    [ 8 bytes / double   ] PMU Value
+    [ x bytes / x        ] PMU Value (defined by sampler)
     [ 4 bytes / uint32_t ] Number of Threads
     Thread{
         [ 4 bytes / uint32_t ] Thread ID
