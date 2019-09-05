@@ -125,6 +125,7 @@ if args.interpolate > 1:
 threadAxisHeight = 0 if args.no_threads else 0.1 + (0.233 * min(1, len(threads) / 32))
 
 del profile
+del sampleFormatter
 gc.collect()
 
 fig = plotly.tools.make_subplots(
@@ -220,7 +221,7 @@ if not args.no_threads:
         )
         print("finished")
 
-
+del times
 del threads
 del threadDisplay
 gc.collect()
