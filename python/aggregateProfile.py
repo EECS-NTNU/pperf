@@ -9,8 +9,8 @@ import plotly.graph_objs as go
 import numpy
 import textwrap
 import tabulate
-import re
 import profileLib
+import gc
 
 aggregateKeyNames = ["pc", "binary", "file", "procedure_mangled", "procedure", "line"]
 
@@ -156,6 +156,7 @@ for fileProfile in args.profiles:
 
     del sampleFormatter
     del profile
+    gc.collect()
 
     for key in subAggregate:
         if key in aggregatedProfile['profile']:
@@ -175,6 +176,7 @@ for fileProfile in args.profiles:
             ]
 
     del subAggregate
+    gc.collect()
 
 # aggregatedProfile['profile'][key] = [time, power, energy, samples, executions, label]
 
@@ -270,6 +272,7 @@ if (args.plot):
     print(f"Plot saved to {args.plot}")
     del pAggregationLabel
     del fig
+    gc.collect()
 
 if (args.table or not args.quiet):
     aggregationLabel = numpy.insert(aggregationLabel[::-1], 0, "_total")

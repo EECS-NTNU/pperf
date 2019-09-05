@@ -9,6 +9,7 @@ import plotly
 import plotly.graph_objs as go
 import numpy
 import profileLib
+import gc
 
 
 parser = argparse.ArgumentParser(description="Visualize profiles from intrvelf sampler.")
@@ -52,7 +53,10 @@ freq = 1 / avgSampleTime
 volts = profile['volts']
 cpus = profile['cpus']
 
+
 samples = numpy.array(profile['profile'], dtype=object)
+del profile['profile']
+gc.collect()
 
 
 if (args.start):
@@ -121,6 +125,7 @@ if args.interpolate > 1:
 threadAxisHeight = 0 if args.no_threads else 0.1 + (0.233 * min(1, len(threads) / 32))
 
 del profile
+gc.collect()
 
 fig = plotly.tools.make_subplots(
     rows=1 if args.no_threads else 2,
@@ -176,6 +181,7 @@ fig.append_trace(
 )
 
 del powers
+gc.collect()
 
 if not args.no_threads:
     ticknumbers = numpy.arange(len(threads) + 2)
@@ -217,6 +223,7 @@ if not args.no_threads:
 
 del threads
 del threadDisplay
+gc.collect()
 
 sys.stdout.flush()
 plotly.offline.plot(fig, filename=args.plot, auto_open=not args.quiet)

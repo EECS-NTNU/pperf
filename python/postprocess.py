@@ -7,7 +7,7 @@ import struct
 import pickle
 import bz2
 import profileLib
-
+import gc
 
 profile = {
     'version': profileLib.profileVersion,
@@ -154,6 +154,7 @@ for i in range(vmmapCount):
 print("Reading raw vm maps... finished!")
 
 del binProfile
+gc.collect()
 
 vmmapString = '\n'.join([f"{x[0]:x} {x[1]:x} {x[2]}" for x in vmmaps])
 if (args.dump_vmmap):
@@ -165,6 +166,7 @@ sampleParser.addSearchPath(args.search_path)
 sampleParser.loadVMMap(fromBuffer=vmmapString)
 del vmmaps
 del vmmapString
+gc.collect()
 
 profile['name'] = args.name if args.name else sampleParser.binaries[0]['binary']
 profile['target'] = sampleParser.binaries[0]['binary']
@@ -172,7 +174,8 @@ profile['target'] = sampleParser.binaries[0]['binary']
 i = 0
 prevThreadCpuTimes = {}
 offsetSampleWallTime = None
-for sample in rawSamples:
+while rawSamples:
+    sample = rawSamples.pop(0)
     if (i % 1000 == 0):
         progress = int((i + 1) * 100 / sampleCount)
         print(f"Post processing... {progress}%\r", end="")

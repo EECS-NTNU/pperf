@@ -7,7 +7,7 @@ import pickle
 import bz2
 import csv
 import profileLib
-
+import gc
 
 maxPowerSensors = 7
 
@@ -109,7 +109,8 @@ avgSampleTime = float(csvProfile[-1][0]) / profile['samples']
 i = 0
 csvProfile.pop(0)
 prevTime = None
-for sample in csvProfile:
+while csvProfile:
+    sample = csvProfile.pop(0)
     if (i % 1000 == 0):
         progress = int((i + 1) * 100 / len(csvProfile))
         print(f"Post processing... {progress}%\r", end="")
@@ -129,8 +130,6 @@ for sample in csvProfile:
 
     prevTime = wallTime
     profile['profile'].append([power, wallTime, processedSample])
-
-del csvProfile
 
 profile['binaries'] = sampleParser.getBinaryMap()
 profile['functions'] = sampleParser.getFunctionMap()
