@@ -112,7 +112,7 @@ prevTime = None
 while csvProfile:
     sample = csvProfile.pop(0)
     if (i % 1000 == 0):
-        progress = int((i + 1) * 100 / len(csvProfile))
+        progress = int((i + 1) * 100 / profile['samples'])
         print(f"Post processing... {progress}%\r", end="")
     i += 1
 
