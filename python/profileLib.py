@@ -67,7 +67,7 @@ def decodeAddr2Line(output, demangle=True):
         lines.pop()
     if (len(lines) < 3):
         raise Exception('addr2line output malformed!')
-    address = lines[0]
+    address = int(lines[0],0)
     function = LABEL_UNKNOWN if lines[-2] == '??' else lines[-2]
     demangled = function
     if (demangle and demangled != LABEL_UNKNOWN):
