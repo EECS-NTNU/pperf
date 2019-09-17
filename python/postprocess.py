@@ -22,7 +22,7 @@ profile = {
     'functions': [],
     'files': [],
     'profile': [],
-    'toolchainPrefix': profileLib.crossCompile
+    'toolchain': profileLib.getToolchainVersion()
 }
 
 parser = argparse.ArgumentParser(description="Parse profiles from intrvelf sampler.")

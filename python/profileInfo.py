@@ -42,7 +42,7 @@ for fileProfile in args.profiles:
         print(f"    Target:    {profile['target']}")
         print(f"    Mean:      {profile['mean']}")
         if 'toolchain' in profile:
-            print(f"    toolchain: {profile['toolchainPrefix']}")
+            print(f"    toolchain: {profile['toolchain']}")
     else:
         if 'version' not in profile or profile['version'] != profileLib.profileVersion:
             raise Exception(f"Incompatible profile version (required: {profileLib.profileVersion})")
@@ -55,4 +55,4 @@ for fileProfile in args.profiles:
         print(f"    Name:      {profile['name']}")
         print(f"    Target:    {profile['target']}")
         if 'toolchain' in profile:
-            print(f"    toolchain: {profile['toolchainPrefix']}")
+            print(f"    toolchain: {profile['toolchain']}")

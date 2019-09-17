@@ -14,8 +14,8 @@ LABEL_UNKNOWN = '_unknown'
 LABEL_FOREIGN = '_foreign'
 LABEL_KERNEL = '_kernel'
 
-aggProfileVersion = 'a0.6'
-profileVersion = '0.4'
+aggProfileVersion = 'a0.7'
+profileVersion = '0.5'
 
 aggTime = 0
 aggPower = 1
@@ -27,6 +27,13 @@ aggLabel = 5
 disableCache = False if 'DISABLE_CACHE' not in os.environ else (True if os.environ['DISABLE_CACHE'] == '1' else False)
 crossCompile = "" if 'CROSS_COMPILE' not in os.environ else os.environ['CROSS_COMPILE']
 _cppfiltCache = {}
+
+
+def getToolchainVersion():
+    global crossCompile
+    addr2line = subprocess.run(f"{crossCompile}addr2line -v | head -n 1 | egrep -Eo '[0-9]+\.[0-9.]+$'", shell=True, stdout=subprocess.PIPE)
+    addr2line.check_returncode()
+    return crossCompile + addr2line.stdout.decode('utf-8').split('\n')[0]
 
 
 def parseRange(stringRange):
@@ -54,6 +61,29 @@ def demangleFunction(function):
     return _cppfiltCache[function]
 
 
+def decodeAddr2Line(output, demangle=True):
+    lines = output.split('\n')
+    while len(lines[-1]) == 0:
+        lines.pop()
+    if (len(lines) < 3):
+        raise Exception('addr2line output malformed!')
+    address = lines[0]
+    function = LABEL_UNKNOWN if lines[-2] == '??' else lines[-2]
+    demangled = function
+    if (demangle and demangled != LABEL_UNKNOWN):
+        demangled = demangleFunction(demangled)
+    location = lines[-1].split(' ')[0].split(':')
+    sourcefile = LABEL_UNKNOWN if location[0] == '??' else location[0]
+    sourceline = 0 if location[1] == '?' else int(location[1])
+    return {
+        'address': address,
+        'function': function,
+        'demangled': demangled,
+        'sourcefile': sourcefile,
+        'sourceline': sourceline
+    }
+
+
 def batchAddr2line(elf, pcs, demangle=True):
     global crossCompile
     tmpFile, tmpFilename = tempfile.mkstemp()
@@ -62,28 +92,15 @@ def batchAddr2line(elf, pcs, demangle=True):
         with os.fdopen(tmpFile, 'w') as tmp:
             for pc in pcs:
                 tmp.write(f"0x{pc:x}\n")
-        addr2line = subprocess.run(f"{crossCompile}addr2line -f -s -a -e {elf} @{tmpFilename}", shell=True, stdout=subprocess.PIPE)
+        addr2line = subprocess.run(f"{crossCompile}addr2line -fsai -e {elf} @{tmpFilename}", shell=True, stdout=subprocess.PIPE)
         addr2line.check_returncode()
-        parsed = numpy.array(addr2line.stdout.decode('utf-8').split("\n"), dtype=object)[:-1].reshape((-1, 3))
+        parsed = addr2line.stdout.decode('utf-8').split("\n0x")
+        first = True
         for x in parsed:
-            # File, Func, Demangled, Line
-            subresult = [LABEL_UNKNOWN, LABEL_UNKNOWN, LABEL_UNKNOWN, 0]
-            parsedPc = int(x[0], 0)
-            fileAndLine = x[2].split(':')
-            fileAndLine[1] = fileAndLine[1].split(' ')[0]
-            if not fileAndLine[0] == '??':
-                subresult[0] = fileAndLine[0]
-            if not x[1] == '??':
-                subresult[1] = x[1]
-            if not fileAndLine[1] == '?':
-                subresult[3] = int(fileAndLine[1])
-
-            subresult[2] = subresult[1]
-
-            if (demangle and subresult[1] != LABEL_UNKNOWN):
-                subresult[2] = demangleFunction(subresult[1])
-
-            result[parsedPc] = subresult
+            x = x if first else '0x' + x
+            first = False
+            decoded = decodeAddr2Line(x, demangle)
+            result[decoded['address']] = [decoded['sourcefile'], decoded['function'], decoded['demangled'], decoded['sourceline']]
     finally:
         os.remove(tmpFilename)
 
@@ -92,29 +109,10 @@ def batchAddr2line(elf, pcs, demangle=True):
 
 def addr2line(elf, pc, demangle=True):
     global crossCompile
-    srcfile = LABEL_FOREIGN
-    srcfunction = LABEL_FOREIGN
-    srcdemangled = LABEL_FOREIGN
-    srcline = 0
-
-    addr2line = subprocess.run(f"{crossCompile}addr2line -f -s -e {elf} -a {pc:x}", shell=True, stdout=subprocess.PIPE)
+    addr2line = subprocess.run(f"{crossCompile}addr2line -fsai -e {elf} {pc:x}", shell=True, stdout=subprocess.PIPE)
     addr2line.check_returncode()
-    result = addr2line.stdout.decode('utf-8').split("\n")
-    fileAndLine = result[2].split(':')
-    fileAndLine[1] = fileAndLine[1].split(' ')[0]
-    if not result[1] == '??':
-        srcfunction = result[1]
-    if not fileAndLine[0] == '??':
-        srcfile = fileAndLine[0]
-    if not fileAndLine[1] == '?':
-        srcline = int(fileAndLine[1])
-
-    srcdemangled = srcfunction
-
-    if (demangle and srcfunction != LABEL_UNKNOWN):
-        srcdemangled = demangleFunction(srcfunction)
-
-    return [srcfile, srcfunction, srcdemangled, srcline]
+    decoded = decodeAddr2Line(addr2line.stdout.decode('utf-8'), demangle)
+    return [decoded['sourcefile'], decoded['function'], decoded['demangled'], decoded['sourceline']]
 
 
 # Work in Progress
