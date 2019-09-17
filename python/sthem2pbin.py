@@ -7,7 +7,6 @@ import pickle
 import bz2
 import csv
 import profileLib
-import gc
 
 maxPowerSensors = 7
 
@@ -24,6 +23,7 @@ profile = {
     'functions': [],
     'files': [],
     'profile': [],
+    'toolchainPrefix': profileLib.crossCompile
 }
 
 parser = argparse.ArgumentParser(description="Parse sthem csv exports.")

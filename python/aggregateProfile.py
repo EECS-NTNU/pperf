@@ -65,7 +65,8 @@ aggregatedProfile = {
     'name': False,
     'target': False,
     'mean': len(args.profiles),
-    'aggregated': False
+    'aggregated': False,
+    'toolchainPrefix': 'various'
 }
 
 meanFac = 1 / aggregatedProfile['mean']
@@ -83,6 +84,12 @@ for fileProfile in args.profiles:
     if i == 1 and 'version' in profile and profile['version'] == profileLib.aggProfileVersion and len(args.profiles) == 1:
         aggregatedProfile = profile
         break
+
+    if 'toolchainPrefix' in profile:
+        if i == 1:
+            aggregatedProfile['toolchainPrefix'] = profile['toolchainPrefix'];
+        elif aggregatedProfile['toolchainPrefix'] != profile['toolchainPrefix']:
+            aggregatedProfile['toolchainPrefix'] = 'various'
 
     print(f"Aggregate profile {i}/{len(args.profiles)}...\r", end="")
     i += 1

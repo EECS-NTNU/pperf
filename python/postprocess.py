@@ -22,6 +22,7 @@ profile = {
     'functions': [],
     'files': [],
     'profile': [],
+    'toolchainPrefix': profileLib.crossCompile
 }
 
 parser = argparse.ArgumentParser(description="Parse profiles from intrvelf sampler.")
