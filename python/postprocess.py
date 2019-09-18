@@ -176,16 +176,22 @@ profile['target'] = sampleParser.binaries[0]['binary']
 i = 0
 prevThreadCpuTimes = {}
 offsetSampleWallTime = None
-startTime = time.time()
+lastTime = time.time()
+updateInterval = 5000 if (sampleCount / 5000 >= 100) else int(sampleCount / 100)
 
 while rawSamples:
     sample = rawSamples.pop(0)
-    if (i % 5000 == 0):
-        elapsedTime = time.time() - startTime
+    if (i % updateInterval == 0):
+        currentTime = time.time()
+        elapsed = currentTime - lastTime
         progress = int((i + 1) * 100 / sampleCount)
-        samplePerSecond = int(i / elapsedTime) if elapsedTime > 0 else 'n/a'
-        remainingTime = datetime.timedelta(seconds=int((sampleCount - i) / samplePerSecond)) if samplePerSecond > 0 else 'n/a'
-        print(f"Post processing... {progress}% (ETA: {remainingTime}, {samplePerSecond} samples/s)\r", end="")
+        if (elapsed <= 0) or (i == 0):
+            samplesPerSecond = remainingTime = 'n/a'
+        else:
+            samplesPerSecond = int(updateInterval / elapsed)
+            remainingTime = datetime.timedelta(seconds=int((sampleCount - i) / samplesPerSecond))
+        print(f"Post processing... {progress}% (ETA: {remainingTime}, {samplesPerSecond} samples/s)\r", end="")
+        lastTime = currentTime
     i += 1
 
     if offsetSampleWallTime is None:
@@ -210,7 +216,7 @@ profile['binaries'] = sampleParser.getBinaryMap()
 profile['functions'] = sampleParser.getFunctionMap()
 profile['files'] = sampleParser.getFileMap()
 
-print("Post processing... finished!")
+print("\nPost processing... finished!")
 
 print(f"Writing {args.output}... ", end="")
 sys.stdout.flush()
