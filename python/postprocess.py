@@ -8,6 +8,8 @@ import pickle
 import bz2
 import profileLib
 import gc
+import time
+import datetime
 
 profile = {
     'version': profileLib.profileVersion,
@@ -115,7 +117,6 @@ profile['samplingTime'] = (wallTimeUs / 1000000.0)
 profile['latencyTime'] = (latencyTimeUs / 1000000.0)
 
 rawSamples = []
-
 for i in range(sampleCount):
     if (i % 1000 == 0):
         progress = int((i + 1) * 100 / sampleCount)
@@ -175,11 +176,16 @@ profile['target'] = sampleParser.binaries[0]['binary']
 i = 0
 prevThreadCpuTimes = {}
 offsetSampleWallTime = None
+startTime = time.time()
+
 while rawSamples:
     sample = rawSamples.pop(0)
-    if (i % 1000 == 0):
+    if (i % 5000 == 0):
+        elapsedTime = time.time() - startTime
         progress = int((i + 1) * 100 / sampleCount)
-        print(f"Post processing... {progress}%\r", end="")
+        samplePerSecond = int(i / elapsedTime) if elapsedTime > 0 else 'n/a'
+        remainingTime = datetime.timedelta(seconds=int((sampleCount - i) / samplePerSecond)) if samplePerSecond > 0 else 'n/a'
+        print(f"Post processing... {progress}% (ETA: {remainingTime}, {samplePerSecond} samples/s)\r", end="")
     i += 1
 
     if offsetSampleWallTime is None:

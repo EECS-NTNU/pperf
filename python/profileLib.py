@@ -8,7 +8,6 @@ import hashlib
 import pickle
 from filelock import FileLock
 import tempfile
-import numpy
 
 LABEL_UNKNOWN = '_unknown'
 LABEL_FOREIGN = '_foreign'
@@ -16,6 +15,7 @@ LABEL_KERNEL = '_kernel'
 
 aggProfileVersion = 'a0.7'
 profileVersion = '0.5'
+cacheVersion = '0.1'
 
 aggTime = 0
 aggPower = 1
@@ -27,13 +27,18 @@ aggLabel = 5
 disableCache = False if 'DISABLE_CACHE' not in os.environ else (True if os.environ['DISABLE_CACHE'] == '1' else False)
 crossCompile = "" if 'CROSS_COMPILE' not in os.environ else os.environ['CROSS_COMPILE']
 _cppfiltCache = {}
+_toolchainVersion = False
 
 
 def getToolchainVersion():
+    global _toolchainVersion
     global crossCompile
+    if _toolchainVersion is not False:
+        return _toolchainVersion
     addr2line = subprocess.run(f"{crossCompile}addr2line -v | head -n 1 | egrep -Eo '[0-9]+\.[0-9.]+$'", shell=True, stdout=subprocess.PIPE)
     addr2line.check_returncode()
-    return crossCompile + addr2line.stdout.decode('utf-8').split('\n')[0]
+    _toolchainVersion = crossCompile + addr2line.stdout.decode('utf-8').split('\n')[0]
+    return _toolchainVersion
 
 
 def parseRange(stringRange):
@@ -67,7 +72,7 @@ def decodeAddr2Line(output, demangle=True):
         lines.pop()
     if (len(lines) < 3):
         raise Exception('addr2line output malformed!')
-    address = int(lines[0],0)
+    address = int(lines[0], 0)
     function = LABEL_UNKNOWN if lines[-2] == '??' else lines[-2]
     demangled = function
     if (demangle and demangled != LABEL_UNKNOWN):
@@ -128,13 +133,14 @@ class elfCache:
     def getDataFromPC(self, elf, pc):
         if elf not in self.caches:
             self.openOrCreateCache(elf)
-        if pc not in self.caches[elf]:
+        if pc not in self.caches[elf]['cache']:
             print(f"WARNING: 0x{pc:x} does not exist in cache for file {elf}")
             return addr2line(elf, pc)
         else:
-            return self.caches[elf][pc]
+            return self.caches[elf]['cache'][pc]
 
     def openOrCreateCache(self, elf):
+        global cacheVersion
         cacheName = self.getCacheName(elf)
         lock = FileLock(cacheName + ".lock")
         lock.acquire()
@@ -145,8 +151,12 @@ class elfCache:
             except Exception:
                 os.remove(cacheName)
                 self.openOrCreateCache(elf)
+            if 'version' not in self.caches[elf] or self.caches[elf]['version'] != cacheVersion:
+                raise Exception(f"Wrong version of cache for {elf} located at {cacheName}!")
+            if self.caches[elf]['toolchain'] != getToolchainVersion():
+                print("WARNING: toolchain version of cache for {elf} located at {cacheName} does not match")
         else:
-            self.caches[elf] = {}
+            self.caches[elf] = {'version': cacheVersion, 'toolchain': getToolchainVersion(), 'cache': {}}
             readelf = subprocess.run(f"readelf -lW {elf} 2>/dev/null | awk '$0 ~ /LOAD.+ R.E 0x/ {{print $3\":\"$6}}'", shell=True, stdout=subprocess.PIPE)
             readelf.check_returncode()
             maps = readelf.stdout.decode('utf-8').split('\n')[:-1]
@@ -154,7 +164,7 @@ class elfCache:
                 start = int(map.split(":")[0], 0)
                 end = int(map.split(":")[1], 0)
                 print(f"\rCreating address cache for {elf} from 0x{start:x} to 0x{end:x}...")
-                self.caches[elf].update(batchAddr2line(elf, list(range(start, end))))
+                self.caches[elf]['cache'].update(batchAddr2line(elf, list(range(start, end + 1))))
 
             pickle.dump(self.caches[elf], open(cacheName, "wb"), pickle.HIGHEST_PROTOCOL)
             lock.release()
@@ -164,7 +174,7 @@ class elfCache:
         hasher = hashlib.md5()
         with open(elf, 'rb') as afile:
             hasher.update(afile.read())
-        return self.cacheFolder + '/elfcache_' + crossCompile + hasher.hexdigest()
+        return self.cacheFolder + '/elfcache_' + hasher.hexdigest()
 
 
 class sampleParser:
@@ -316,23 +326,16 @@ class sampleParser:
         if pc in self._fetched_pc_data:
             return self._fetched_pc_data[pc]
 
-        srcpc = pc
-        srcbinary = self.LABEL_FOREIGN
-        srcfile = self.LABEL_FOREIGN
-        srcfunction = self.LABEL_FOREIGN
-        srcdemangled = self.LABEL_FOREIGN
-        srcline = 0
-
         binary = self.getBinaryFromPC(pc)
         if binary is not False:
             srcpc = pc if binary['static'] else pc - binary['start']
             srcbinary = binary['binary']
-            srcfunction = self.LABEL_UNKNOWN
-            srcdemangled = self.LABEL_UNKNOWN
-            srcfile = self.LABEL_UNKNOWN
-            srcline = 0
 
             if binary['kernel']:
+                srcfunction = self.LABEL_UNKNOWN
+                srcdemangled = self.LABEL_UNKNOWN
+                srcfile = self.LABEL_UNKNOWN
+                srcline = 0
                 for f in self.kallsyms:
                     if f[0] <= srcpc:
                         srcfunction = f[1]
@@ -340,6 +343,13 @@ class sampleParser:
                         break
             else:
                 srcfile, srcfunction, srcdemangled, srcline = addr2line(binary['path'], srcpc) if self.cache is None else self.cache.getDataFromPC(binary['path'], srcpc)
+        else:
+            srcpc = pc
+            srcbinary = self.LABEL_FOREIGN
+            srcfile = self.LABEL_FOREIGN
+            srcfunction = self.LABEL_FOREIGN
+            srcdemangled = self.LABEL_FOREIGN
+            srcline = 0
 
         if srcbinary not in self.binaryMap:
             self.binaryMap.append(srcbinary)
