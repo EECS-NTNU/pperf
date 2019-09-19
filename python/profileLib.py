@@ -154,7 +154,7 @@ class elfCache:
             if 'version' not in self.caches[elf] or self.caches[elf]['version'] != cacheVersion:
                 raise Exception(f"Wrong version of cache for {elf} located at {cacheName}!")
             if self.caches[elf]['toolchain'] != getToolchainVersion():
-                print("WARNING: toolchain version of cache for {elf} located at {cacheName} does not match")
+                print(f"WARNING: toolchain version of cache for {elf} located at {cacheName} does not match")
         else:
             self.caches[elf] = {'version': cacheVersion, 'toolchain': getToolchainVersion(), 'cache': {}}
             readelf = subprocess.run(f"readelf -lW {elf} 2>/dev/null | awk '$0 ~ /LOAD.+ R.E 0x/ {{print $3\":\"$6}}'", shell=True, stdout=subprocess.PIPE)
