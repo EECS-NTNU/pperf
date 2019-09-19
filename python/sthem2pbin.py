@@ -113,10 +113,9 @@ csvProfile.pop(0)
 sampleCount = profile['samples']
 prevTime = None
 lastTime = time.time()
-updateInterval = 5000 if (sampleCount / 5000 >= 100) else int(sampleCount / 100)
+updateInterval = 10000 if (sampleCount / 10000 >= 100) else int(sampleCount / 100)
 
-while csvProfile:
-    sample = csvProfile.pop(0)
+for sample in csvProfile:
     if (i % updateInterval == 0):
         currentTime = time.time()
         elapsed = currentTime - lastTime

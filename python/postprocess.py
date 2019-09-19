@@ -177,10 +177,9 @@ i = 0
 prevThreadCpuTimes = {}
 offsetSampleWallTime = None
 lastTime = time.time()
-updateInterval = 5000 if (sampleCount / 5000 >= 100) else int(sampleCount / 100)
+updateInterval = 10000 if (sampleCount / 10000 >= 100) else int(sampleCount / 100)
 
-while rawSamples:
-    sample = rawSamples.pop(0)
+for sample in rawSamples:
     if (i % updateInterval == 0):
         currentTime = time.time()
         elapsed = currentTime - lastTime
