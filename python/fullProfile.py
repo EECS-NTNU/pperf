@@ -128,7 +128,7 @@ del profile
 del sampleFormatter
 gc.collect()
 
-fig = plotly.tools.make_subplots(
+fig = plotly.subplots.make_subplots(
     rows=1 if args.no_threads else 2,
     cols=1,
     specs=[[{}]] if args.no_threads else [[{}], [{}]],
