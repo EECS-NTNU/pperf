@@ -113,7 +113,7 @@ csvProfile.pop(0)
 sampleCount = profile['samples']
 prevTime = None
 lastTime = time.time()
-updateInterval = 10000 if (sampleCount / 10000 >= 100) else int(sampleCount / 100)
+updateInterval = int(sampleCount / 200)
 
 for sample in csvProfile:
     if (i % updateInterval == 0):
