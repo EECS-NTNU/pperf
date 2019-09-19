@@ -124,7 +124,7 @@ for sample in csvProfile:
             samplesPerSecond = remainingTime = 'n/a'
         else:
             samplesPerSecond = int(updateInterval / elapsed)
-            remainingTime = datetime.timedelta(seconds=int((sampleCount - i) / samplesPerSecond))
+            remainingTime = datetime.timedelta(seconds=int((sampleCount - i) / samplesPerSecond)) if samplesPerSecond != 0 else 'n/a'
         print(f"Post processing... {progress}% (ETA: {remainingTime}, {samplesPerSecond} samples/s)\r", end="")
         lastTime = currentTime
     i += 1
