@@ -273,21 +273,21 @@ if len(baselineChart['keys']) == 0:
 
 # calculate baseline total
 values = numpy.array(baselineChart['values'])
-baselineProfile['totals'] = [
+baselineChart['totals'] = [
     numpy.sum(values[:, 0]),
     0.0,
     numpy.sum(values[:, 2]),
     1,
     numpy.sum(values[:, 4])
 ]
-baselineProfile['totals'][cmpPower] = (baselineProfile['totals'][cmpEnergy] / baselineProfile['totals'][cmpTime]) if baselineProfile['totals'][cmpTime] != 0 else 0
-baselineProfile['totals'][cmpRelSamples] = 1
+baselineChart['totals'][cmpPower] = (baselineChart['totals'][cmpEnergy] / baselineChart['totals'][cmpTime]) if baselineChart['totals'][cmpTime] != 0 else 0
+baselineChart['totals'][cmpRelSamples] = 1
 del values
 
 # fill in the weights, based on baseline energy
 for index, _ in enumerate(baselineChart['keys']):
     for chart in errorCharts:
-        chart['weights'].append(chart['values'][index][cmpEnergy] / baselineProfile['totals'][cmpEnergy])
+        chart['weights'].append(chart['values'][index][cmpEnergy] / baselineChart['fullTotals'][cmpEnergy])
 
 # fill in the errors
 if errorFunction is not False:
@@ -310,21 +310,22 @@ if errorFunction is not False and aggregateFunction is False:
     headers = numpy.array([chart['name'] for chart in errorCharts])
     baselineValues = numpy.array(baselineChart['values'])
     rows = numpy.array([x + f', {t * 1000:.3f} ms' for x, t in zip(baselineChart['labels'], baselineValues[:, 4].flatten())], dtype=object).reshape(-1, 1)
-    execTimes = numpy.empty((rows.shape[0], 0))
+    barLabels = numpy.empty((rows.shape[0], 0))
     del baselineValues
     for chart in errorCharts:
         chartValues = numpy.array(chart['values'])
         rows = numpy.append(rows, numpy.array(chart['errors']).reshape(-1, 1), axis=1)
-        execTimes = numpy.append(execTimes, chartValues[:, 4].reshape(-1, 1), axis=1)
+        barLabels = numpy.append(barLabels, numpy.array(chart['weights']).reshape(-1, 1), axis=1)  # weights
+        # barLabels = numpy.append(barLabels, chartValues[:, 4].reshape(-1, 1), axis=1) # execTimes
 
     asort = rows[:, 1].argsort()
     rows = rows[asort]
-    execTimes = execTimes[asort]
+    barLabels = barLabels[asort]
 
 if aggregateFunction is not False:
     baselineValues = numpy.array(baselineChart['values'])
     rows = numpy.array([chart['name'] for chart in errorCharts], dtype=object).reshape(-1, 1)
-    execTimes = numpy.array([''] * len(rows)).reshape(1, -1)
+    barLabels = numpy.array([''] * len(rows)).reshape(1, -1)
     errors = numpy.empty(0)
     for chart in errorCharts:
         chartValues = numpy.array(chart['values'])
@@ -343,13 +344,13 @@ if (args.plot):
     maxLen = 0
     for index, name in enumerate(headers):
         pAggregationLabel = [textwrap.fill(x, 64).replace('\n', '<br />') for x in rows[:, 0]]
-        pExecTimes = [(f'{t * 1000:.3f} ms' if isinstance(t, float) else t) for t in execTimes[:, index]]
+        pBarLabels = [(f'{t * 100:.2f}%' if isinstance(t, float) else t) for t in barLabels[:, index]]
         fig["data"].append(
             go.Bar(
                 y=pAggregationLabel,
                 x=rows[:, (index + 1)],
                 name=name,
-                text=pExecTimes,
+                text=pBarLabels,
                 textposition='auto',
                 orientation='h',
                 hoverinfo='name+x' if aggregateFunction is False else 'y+x'
