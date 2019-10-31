@@ -115,7 +115,7 @@ lastTime = time.time()
 updateInterval = int(sampleCount / 200)
 wallTime = 0.0
 
-next(csvProfile);
+next(csvProfile)
 for sample in csvProfile:
     if (i % updateInterval == 0):
         currentTime = time.time()
@@ -144,6 +144,9 @@ for sample in csvProfile:
 
     prevTime = wallTime
     profile['profile'].append([power, wallTime, processedSample])
+
+del csvProfile
+del csvFile
 
 profile['samplingTime'] = wallTime
 profile['binaries'] = sampleParser.getBinaryMap()
