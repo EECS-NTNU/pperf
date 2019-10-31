@@ -76,17 +76,21 @@ sampleParser = profileLib.sampleParser()
 
 sampleParser.addSearchPath(args.search_path)
 
-print("Reading csv... ", end="")
+print("Opening csv... ", end="")
 sys.stdout.flush()
 
-csvProfile = []
 if args.csv.endswith(".bz2"):
-    with bz2.open(args.csv, "rt") as csvFile:
-        csvProfile = list(csv.reader(csvFile, delimiter=";"))
+    csvFile = bz2.open(args.csv, "rt")
 else:
-    with open(args.csv, "r") as csvFile:
-        csvProfile = list(csv.reader(csvFile, delimiter=";"))
+    csvFile = open(args.csv, "r")
 
+
+csvProfile = csv.reader(csvFile, delimiter=";")
+
+# get number of samples
+
+profile['samples'] = sum(1 for line in csvFile) - 1
+csvFile.seek(0)
 
 print("finished!")
 
@@ -104,17 +108,14 @@ if (args.kallsyms):
 # print("Not using skewed pc adjustment!")
 # sampleParser.enableSkewedPCAdjustment()
 
-profile['samples'] = len(csvProfile)
-profile['samplingTime'] = float(csvProfile[-1][0])
-avgSampleTime = float(csvProfile[-1][0]) / profile['samples']
-
 i = 0
-csvProfile.pop(0)
 sampleCount = profile['samples']
 prevTime = None
 lastTime = time.time()
 updateInterval = int(sampleCount / 200)
+wallTime = 0.0
 
+next(csvProfile);
 for sample in csvProfile:
     if (i % updateInterval == 0):
         currentTime = time.time()
@@ -144,6 +145,7 @@ for sample in csvProfile:
     prevTime = wallTime
     profile['profile'].append([power, wallTime, processedSample])
 
+profile['samplingTime'] = wallTime
 profile['binaries'] = sampleParser.getBinaryMap()
 profile['functions'] = sampleParser.getFunctionMap()
 profile['files'] = sampleParser.getFileMap()
