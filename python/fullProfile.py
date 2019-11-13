@@ -12,6 +12,8 @@ import profileLib
 import gc
 
 
+plotly.io.templates.default = 'plotly_white'
+
 parser = argparse.ArgumentParser(description="Visualize profiles from intrvelf sampler.")
 parser.add_argument("profile", help="postprocessed profile from intrvelf")
 parser.add_argument("-s", "--start", type=float, help="plot start time (seconds)")

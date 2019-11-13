@@ -11,8 +11,11 @@ import textwrap
 import tabulate
 import copy
 import math
-
+import operator
+import collections
 import profileLib
+
+plotly.io.templates.default = 'plotly_white'
 
 
 def error(baseline, value, totalBaseline, totalValue, weight):
@@ -48,22 +51,22 @@ def absoluteWeightedRelativeError(baseline, value, totalBaseline, totalValue, we
 
 
 # values are already processed by errorFunction
-def aggregateTotal(baselines, values, weightValues, weightTotal):
+def aggregateSum(baselines, values, totalBaseline, totalValue, weights):
     return sum(values)
 
 
 # values are already processed by errorFunction
-def aggregateMin(baselines, values, totalBaseline, totalValue):
+def aggregateMin(baselines, values, totalBaseline, totalValue, weights):
     return min(values)
 
 
 # values are already processed by errorFunction
-def aggregateMax(baselines, values, totalBaseline, totalValue):
+def aggregateMax(baselines, values, totalBaseline, totalValue, weights):
     return max(values)
 
 
 # values are already processed by errorFunction
-def aggregateMean(baselines, values, totalBaseline, totalValue):
+def aggregateMean(baselines, values, totalBaseline, totalValue, weights):
     return sum(values) / len(values)
 
 
@@ -88,7 +91,7 @@ errorFunctions = numpy.array([
 ], dtype=object)
 
 aggregateFunctions = numpy.array([
-    ['total', 'Total', aggregateTotal, True],
+    ['sum', 'Total', aggregateSum, True],
     ['min', 'Minimum', aggregateMin, True],
     ['max', 'Maximum', aggregateMax, True],
     ['mean', 'Mean', aggregateMean, True],
@@ -107,12 +110,17 @@ parser.add_argument("--use-exec-times", help="compare execution time", action="s
 parser.add_argument("-e", "--error", help=f"error function (default: {errorFunctions[0][0]})", default=False, choices=errorFunctions[:, 0], type=str.lower)
 parser.add_argument("-a", "--aggregate", help="aggregate erros", default=False, choices=aggregateFunctions[:, 0], type=str.lower)
 parser.add_argument("-c", "--compensation", help="switch on latency compensation (experimental)", action="store_true", default=False)
-parser.add_argument("--time-threshold", help="time threshold to include (in percent, e.g. 0.0 - 1.0)", type=float, default=0)
-parser.add_argument("--energy-threshold", help="power threshold to include (in percent, e.g. 0.0 - 1.0)", type=float, default=0)
+parser.add_argument("--limit-time", help="include top entries until limit (in percent, e.g. 0.0 - 1.0)", type=float, default=0)
+parser.add_argument("--time-threshold", help="time contribution threshold to include (in percent, e.g. 0.0 - 1.0)", type=float, default=0)
+parser.add_argument("--limit-energy", help="include top entries until limit (in percent, e.g. 0.0 - 1.0)", type=float, default=0)
+parser.add_argument("--energy-threshold", help="energy contribution threshold (in percent, e.g. 0.0 - 1.0)", type=float, default=0)
 parser.add_argument('--names', help='names of the provided profiles (comma sepperated)', type=str, default=False)
 parser.add_argument('-n', '--name', action='append', help='name the provided profiles', default=[])
 parser.add_argument("-t", "--table", help="output csv table")
 parser.add_argument("-p", "--plot", help="plotly html file")
+parser.add_argument("--coverage", action="store_true", help="output coverage", default=False)
+parser.add_argument("--totals", action="store_true", help="output total", default=False)
+parser.add_argument("--weights", action="store_true", help="output importance", default=False)
 parser.add_argument("-q", "--quiet", action="store_true", help="do not automatically open plot file", default=False)
 
 
@@ -148,6 +156,21 @@ if args.use_exec_times:
 if args.use_energy:
     header = "Energy "
     cmpOffset = cmpEnergy
+
+if (args.limit_time is not 0 and args.limit_energy is not 0):
+    print("ERROR: time limit and energy limit cannot be used at the same time")
+    parser.print_help()
+    sys.exit(0)
+
+if (args.limit_time is not 0 and (args.limit_time < 0 or args.limit_time > 1.0)):
+    print("ERROR: time limit out of range")
+    parser.print_help()
+    sys.exit(0)
+
+if (args.limit_energy is not 0 and (args.limit_energy < 0 or args.limit_energy > 1.0)):
+    print("ERROR: energy limit out of range")
+    parser.print_help()
+    sys.exit(0)
 
 if (args.time_threshold is not 0 and (args.time_threshold < 0 or args.time_threshold > 1.0)):
     print("ERROR: time threshold out of range")
@@ -199,6 +222,12 @@ chart = {'name': '', 'fullTotals': [0.0, 0.0, 0.0, 0.0, 0.0], 'totals': [0.0, 0.
 baselineChart = copy.deepcopy(chart)
 baselineChart['name'] = f"{baselineProfile['samples'] / baselineProfile['samplingTime']:.2f} Hz, {baselineProfile['samplingTime']:.2f} s, {baselineProfile['latencyTime'] * 1000000 / baselineProfile['samples']:.2f} us"
 
+if (args.limit_energy is not 0):
+    baselineProfile['profile'] = collections.OrderedDict(sorted(baselineProfile['profile'].items(), key=lambda x: operator.itemgetter(profileLib.aggEnergy)(x[1]), reverse=True))
+else:
+    baselineProfile['profile'] = collections.OrderedDict(sorted(baselineProfile['profile'].items(), key=lambda x: operator.itemgetter(profileLib.aggTime)(x[1]), reverse=True))
+
+
 for key in baselineProfile['profile']:
     baselineChart['fullTotals'][cmpTime] += baselineProfile['profile'][key][profileLib.aggTime]
     baselineChart['fullTotals'][cmpEnergy] += baselineProfile['profile'][key][profileLib.aggEnergy]
@@ -209,6 +238,9 @@ baselineChart['fullTotals'][cmpPower] = (baselineChart['fullTotals'][cmpEnergy] 
 
 chart = {'name': '', 'fullTotals': [0.0, 0.0, 0.0, 0.0, 0.0], 'totals': [0.0, 0.0, 0.0, 0.0, 0.0], 'values': [], 'errors': [], 'weights': []}
 errorCharts = [copy.deepcopy(chart) for x in args.profiles]
+
+includedBaselineTime = 0.0
+includedBaselineEnergy = 0.0
 
 i = 1
 for index, errorChart in enumerate(errorCharts):
@@ -226,44 +258,60 @@ for index, errorChart in enumerate(errorCharts):
     if len(args.name) > index:
         errorCharts[index]['name'] = args.name[index]
     else:
-        errorCharts[index]['name'] = f"{profile['samples'] / profile['samplingTime']:.2f} Hz, {profile['samplingTime']:.2f} s, {profile['latencyTime'] * 1000000 / profile['samples']:.2f} us"
+        errorCharts[index]['name'] = f"{profile['samples'] / profile['samplingTime']:.2f} Hz, {profile['samplingTime']:.2f} s"
 
     for key in profile['profile']:
-        if key in baselineProfile['profile']:
-            if (((args.time_threshold == 0) or ((baselineProfile['profile'][key][profileLib.aggTime] / baselineChart['fullTotals'][cmpTime]) >= args.time_threshold)) and
-               ((args.energy_threshold == 0) or ((baselineProfile['profile'][key][profileLib.aggEnergy] / baselineChart['fullTotals'][cmpEnergy]) >= args.energy_threshold))):
-                if key not in baselineChart['keys']:
-                    baselineChart['keys'].append(key)
-                    baselineChart['labels'].append(baselineProfile['profile'][key][profileLib.aggLabel])
-                    baselineChart['values'].append([
-                        baselineProfile['profile'][key][profileLib.aggTime],     # time
-                        baselineProfile['profile'][key][profileLib.aggPower],    # power
-                        baselineProfile['profile'][key][profileLib.aggEnergy],   # energy
-                        baselineProfile['profile'][key][profileLib.aggSamples] / baselineProfile['samples'],  # relSamples
-                        baselineProfile['profile'][key][profileLib.aggTime] / baselineProfile['profile'][key][profileLib.aggExecs]  # execTimes
-                    ])
-                    for chart in errorCharts:
-                        chart['values'].append([0.0, 0.0, 0.0, 0.0, 0.0])
+        errorChart['fullTotals'][cmpTime] += profile['profile'][key][profileLib.aggTime]
+        errorChart['fullTotals'][cmpEnergy] += profile['profile'][key][profileLib.aggEnergy]
+        errorChart['fullTotals'][cmpExecs] += profile['profile'][key][profileLib.aggExecs]
+    errorChart['fullTotals'][cmpRelSamples] = 1
+    errorChart['fullTotals'][cmpPower] = (errorChart['fullTotals'][cmpEnergy] / errorChart['fullTotals'][cmpTime])
 
-                keyIndex = baselineChart['keys'].index(key)
-                errorChart['values'][keyIndex] = [
-                    profile['profile'][key][profileLib.aggTime],
-                    profile['profile'][key][profileLib.aggPower],
-                    profile['profile'][key][profileLib.aggEnergy],
-                    profile['profile'][key][profileLib.aggSamples] / profile['samples'],
-                    profile['profile'][key][profileLib.aggTime] / profile['profile'][key][profileLib.aggExecs]
-                ]
-                errorChart['totals'][cmpTime] += profile['profile'][key][profileLib.aggTime]
-                errorChart['totals'][cmpEnergy] += profile['profile'][key][profileLib.aggEnergy]
-                errorChart['totals'][cmpExecs] += profile['profile'][key][profileLib.aggTime] / profile['profile'][key][profileLib.aggExecs]
-            errorChart['fullTotals'][cmpTime] += profile['profile'][key][profileLib.aggTime]
-            errorChart['fullTotals'][cmpEnergy] += profile['profile'][key][profileLib.aggEnergy]
-            errorChart['fullTotals'][cmpExecs] += profile['profile'][key][profileLib.aggTime] / profile['profile'][key][profileLib.aggExecs]
+    for key in baselineProfile['profile']:
+        if key in profile['profile']:
+            # Key never seen before, so add it to the baseline and all charts
+            if key not in baselineChart['keys']:
+                # Key was never compared before, check thresholds and limitations whether to include or not
+                if (
+                        ((args.limit_time is not 0) and ((includedBaselineTime / baselineChart['fullTotals'][cmpTime]) >= args.limit_time)) or
+                        ((args.limit_energy is not 0) and ((includedBaselineEnergy / baselineChart['fullTotals'][cmpEnergy]) >= args.limit_energy)) or
+                        ((args.time_threshold is not 0) and ((baselineProfile['profile'][key][profileLib.aggTime] / baselineChart['fullTotals'][cmpTime]) < args.time_threshold)) or
+                        ((args.energy_threshold is not 0) and ((baselineProfile['profile'][key][profileLib.aggEnergy] / baselineChart['fullTotals'][cmpEnergy]) < args.energy_threshold))
+                ):
+                    continue
+                baselineChart['keys'].append(key)
+                baselineChart['labels'].append(baselineProfile['profile'][key][profileLib.aggLabel])
+                baselineChart['values'].append([
+                    baselineProfile['profile'][key][profileLib.aggTime],     # time
+                    baselineProfile['profile'][key][profileLib.aggPower],    # power
+                    baselineProfile['profile'][key][profileLib.aggEnergy],   # energy
+                    baselineProfile['profile'][key][profileLib.aggSamples] / baselineProfile['samples'],  # relSamples
+                    baselineProfile['profile'][key][profileLib.aggTime] / baselineProfile['profile'][key][profileLib.aggExecs]  # execTimes
+                ])
+                includedBaselineTime += baselineProfile['profile'][key][profileLib.aggTime]
+                includedBaselineEnergy += baselineProfile['profile'][key][profileLib.aggEnergy]
+                # print(f'include {key} with now beeing at {includedBaselineTime / baselineChart["fullTotals"][cmpTime]:.3f} time and {includedBaselineEnergy / baselineChart["fullTotals"][cmpEnergy]:.3f} energy')
+                for chart in errorCharts:
+                    chart['values'].append([0.0, 0.0, 0.0, 0.0, 0.0])
 
+            # Index of the key correlates to the errorChart (same order)
+            keyIndex = baselineChart['keys'].index(key)
+            errorChart['values'][keyIndex] = [
+                profile['profile'][key][profileLib.aggTime],
+                profile['profile'][key][profileLib.aggPower],
+                profile['profile'][key][profileLib.aggEnergy],
+                profile['profile'][key][profileLib.aggSamples] / profile['samples'],
+                profile['profile'][key][profileLib.aggTime] / profile['profile'][key][profileLib.aggExecs]
+            ]
+            # Totals are the totals of only comparable keys
+            errorChart['totals'][cmpTime] += profile['profile'][key][profileLib.aggTime]
+            errorChart['totals'][cmpEnergy] += profile['profile'][key][profileLib.aggEnergy]
+            errorChart['totals'][cmpExecs] += profile['profile'][key][profileLib.aggTime] / profile['profile'][key][profileLib.aggExecs]
+        # fullTotals are the metrics of all profile keys
+
+    # These can be calculated afterwards
     errorChart['totals'][cmpPower] = (errorChart['totals'][cmpEnergy] / errorChart['totals'][cmpTime]) if errorChart['totals'][cmpTime] != 0 else 0
     errorChart['totals'][cmpRelSamples] = 1
-    errorChart['fullTotals'][cmpPower] = (errorChart['fullTotals'][cmpEnergy] / errorChart['fullTotals'][cmpTime]) if errorChart['fullTotals'][cmpTime] != 0 else 0
-    errorChart['fullTotals'][cmpRelSamples] = 1
 
     del profile
 
@@ -287,7 +335,10 @@ del values
 # fill in the weights, based on baseline energy
 for index, _ in enumerate(baselineChart['keys']):
     for chart in errorCharts:
-        chart['weights'].append(chart['values'][index][cmpEnergy] / baselineChart['fullTotals'][cmpEnergy])
+        if args.limit_energy:
+            chart['weights'].append(chart['values'][index][cmpEnergy] / baselineChart['fullTotals'][cmpEnergy])
+        else:
+            chart['weights'].append(chart['values'][index][cmpTime] / baselineChart['fullTotals'][cmpTime])
 
 # fill in the errors
 if errorFunction is not False:
@@ -308,18 +359,18 @@ header = header.strip()
 
 if errorFunction is not False and aggregateFunction is False:
     headers = numpy.array([chart['name'] for chart in errorCharts])
-    baselineValues = numpy.array(baselineChart['values'])
-    rows = numpy.array([x + f', {t * 1000:.3f} ms' for x, t in zip(baselineChart['labels'], baselineValues[:, 4].flatten())], dtype=object).reshape(-1, 1)
+    rows = numpy.array(baselineChart['labels']).reshape(-1, 1)
+    weights = numpy.empty((rows.shape[0], 0))
     barLabels = numpy.empty((rows.shape[0], 0))
-    del baselineValues
     for chart in errorCharts:
-        chartValues = numpy.array(chart['values'])
         rows = numpy.append(rows, numpy.array(chart['errors']).reshape(-1, 1), axis=1)
+        weights = numpy.append(weights, numpy.array(chart['weights']).reshape(-1, 1), axis=1)
         barLabels = numpy.append(barLabels, numpy.array(chart['weights']).reshape(-1, 1), axis=1)  # weights
         # barLabels = numpy.append(barLabels, chartValues[:, 4].reshape(-1, 1), axis=1) # execTimes
 
     asort = rows[:, 1].argsort()
     rows = rows[asort]
+    weights = weights[asort]
     barLabels = barLabels[asort]
 
 if aggregateFunction is not False:
@@ -393,13 +444,21 @@ if (args.plot):
 
 if (args.table or not args.quiet):
     if aggregateFunction is False:
-        coverage = ['_coverage']
-        coverage.extend([chart['totals'][0 + compareOffset] / chart['fullTotals'][0 + compareOffset] if chart['fullTotals'][0 + compareOffset] != 0 else 0 for chart in errorCharts])
-        total = ['_total']
-        for i in range(1, len(rows[0])):
-            total.append(numpy.sum(rows[:, (i)]))
-        rows = numpy.concatenate(([total], rows[::-1]), axis=0)
-        rows = numpy.concatenate(([coverage], rows), axis=0)
+        if args.totals:
+            total = ['_total']
+            for i in range(1, len(rows[0])):
+                total = numpy.append(total, numpy.sum(numpy.array(rows[:, (i)], dtype=float)))
+            weights = numpy.concatenate(([[0] * (len(total) - 1)], weights), axis=0)
+            rows = numpy.concatenate(([total], rows), axis=0)
+        if args.coverage:
+            coverage = ['_coverage']
+            coverage.extend([chart['totals'][0 + compareOffset] / chart['fullTotals'][0 + compareOffset] if chart['fullTotals'][0 + compareOffset] != 0 else 0 for chart in errorCharts])
+            weights = numpy.concatenate(([[0] * (len(coverage) - 1)], weights), axis=0)
+            rows = numpy.concatenate(([coverage], rows), axis=0)
+        if args.weights:
+            for i in range(0, len(rows[0]) - 1):
+                headers = numpy.insert(headers, (i * 2), 'Weights')
+                rows = numpy.insert(rows, (i * 2) + 1, weights[:, i], axis=1)
     else:
         header = "Profile"
         rows = rows[::-1]
@@ -410,7 +469,7 @@ if (args.table):
     else:
         table = open(args.table, "w")
     table.write(header + ";" + ';'.join(headers) + "\n")
-    for x in rows:
+    for i, x in enumerate(rows):
         table.write(';'.join([f"{y:.16f}" if not isinstance(y, str) else y for y in x]) + "\n")
     table.close()
     print(f"CSV saved to {args.table}")
@@ -419,4 +478,4 @@ if (not args.quiet):
     headers = numpy.append([header], headers)
 
     rows[:, 0] = [textwrap.fill(x, 64) for x in rows[:, 0]]
-    print(tabulate.tabulate(rows, headers=headers))
+    print(tabulate.tabulate(rows, headers=headers, floatfmt=".16f"))

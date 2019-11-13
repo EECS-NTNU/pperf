@@ -10,8 +10,6 @@ import profileLib
 import time
 import datetime
 
-maxPowerSensors = 7
-
 profile = {
     'version': profileLib.profileVersion,
     'samples': 0,
@@ -40,13 +38,8 @@ parser.add_argument("-c", "--cpus", help="list of active cpu cores", default="0-
 
 args = parser.parse_args()
 
-if (not args.power_sensor) or (args.power_sensor < 1) or (args.power_sensor > maxPowerSensors):
-    print("ERROR: invalid power sensor defined!")
-    parser.print_help()
-    sys.exit(1)
-
 if (not args.output):
-    print("ERROR: not output file defined!")
+    print("ERROR: no output file defined!")
     parser.print_help()
     sys.exit(1)
 
@@ -115,7 +108,26 @@ lastTime = time.time()
 updateInterval = int(sampleCount / 200)
 wallTime = 0.0
 
-next(csvProfile)
+header = [x.lower() for x in next(csvProfile)]
+timeColumn = [i for i, x in enumerate(header) if 'time' in x]
+powerColumns = [i for i, x in enumerate(header) if 'power' in x]
+pcColumns = [i for i, x in enumerate(header) if 'pc' in x]
+
+if not timeColumn:
+    print("ERROR: could not find time column")
+    sys.exit(1)
+else:
+    timeColumn = timeColumn[0]
+
+for cpu in useCpus:
+    if cpu > (len(pcColumns) - 1):
+        print(f"ERROR: could not find PC columns for cpu {cpu}")
+        sys.exit(1)
+
+if args.power_sensor and (args.power_sensor > (len(powerColumns) - 1)):
+    print(f"ERROR: could not find power column for power sensor {args.power_sensor}")
+    sys.exit(1)
+
 for sample in csvProfile:
     if (i % updateInterval == 0):
         currentTime = time.time()
@@ -130,16 +142,16 @@ for sample in csvProfile:
         lastTime = currentTime
     i += 1
 
-    wallTime = float(sample[0])
+    wallTime = float(sample[timeColumn])
 
     if prevTime is None:
         prevTime = wallTime
 
-    power = float(sample[args.power_sensor])
+    power = float(sample[powerColumns[args.power_sensor]]) if args.power_sensor else 0
 
     processedSample = []
     for cpu in useCpus:
-        pc = int(sample[maxPowerSensors + cpu + 1])
+        pc = int(sample[pcColumns[cpu]])
         processedSample.append([cpu, ((wallTime - prevTime) / len(useCpus)), sampleParser.parseFromPC(pc)])
 
     prevTime = wallTime

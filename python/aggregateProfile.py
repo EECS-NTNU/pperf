@@ -5,13 +5,17 @@ import argparse
 import bz2
 import pickle
 import plotly
-import plotly.graph_objs as go
+import plotly.graph_objects as go
 import numpy
 import textwrap
 import tabulate
 import profileLib
 import gc
 
+plotly.io.templates.default = 'plotly_white'
+
+# plotly.io.orca.config.executable = '/usr/bin/orca'
+#
 aggregateKeyNames = ["pc", "binary", "file", "procedure_mangled", "procedure", "line"]
 
 parser = argparse.ArgumentParser(description="Visualize profiles from intrvelf sampler.")
@@ -20,6 +24,7 @@ parser.add_argument("-a", "--aggregate-keys", help=f"aggregate after this list (
 parser.add_argument("-l", "--limit", help="limit output to %% of energy", type=float, default=0)
 parser.add_argument("-t", "--table", help="output csv table")
 parser.add_argument("-p", "--plot", help="plotly html file")
+parser.add_argument("--pdf", help="output pdf plot")
 parser.add_argument("-o", "--output", help="output aggregated profile")
 parser.add_argument("--account-latency", action="store_true", help="substract latency")
 parser.add_argument("--use-wall-time", action="store_true", help="use sample wall time")
@@ -200,7 +205,7 @@ avgSampleTime = aggregatedProfile['samplingTime'] / aggregatedProfile['samples']
 frequency = 1 / avgSampleTime
 
 values = numpy.array(list(aggregatedProfile['profile'].values()), dtype=object)
-values = values[values[:, profileLib.aggEnergy].argsort()]
+values = values[values[:, profileLib.aggTime].argsort()]
 
 times = numpy.array(values[:, profileLib.aggTime], dtype=float)
 powers = numpy.array(values[:, profileLib.aggPower], dtype=float)
@@ -234,9 +239,9 @@ if args.limit is not 0:
 labels = [f"{x:.4f} s, {x * 1000/a:.3f} ms, {s:.2f} W" + f", {y * 100 / totalEnergy if totalEnergy > 0 else 0:.2f}%" for x, a, s, y in zip(times, execs, powers, energies)]
 
 
-#aggregationLabel = [ re.sub(r'\(.*\)$', '', x) for x in aggregationLabel ] 
+# aggregationLabel = [ re.sub(r'\(.*\)$', '', x) for x in aggregationLabel ]
 
-if (args.plot):
+if (args.plot) or (args.pdf):
     pAggregationLabel = [textwrap.fill(x, 64).replace('\n', '<br />') for x in aggregationLabel]
     fig = {
         "data": [go.Bar(
@@ -274,8 +279,14 @@ if (args.plot):
         )
     }
 
-    plotly.offline.plot(fig, filename=args.plot, auto_open=not args.quiet)
-    print(f"Plot saved to {args.plot}")
+    if (args.pdf):
+        go.Figure(fig).write_image(args.pdf)
+        print(f"Plot saved to {args.pdf}")
+
+    if (args.plot):
+        plotly.offline.plot(fig, filename=args.plot, auto_open=not args.quiet)
+        print(f"Plot saved to {args.plot}")
+
     del pAggregationLabel
     del fig
     gc.collect()
@@ -296,7 +307,7 @@ if (args.table):
         table = open(args.table, "w")
     table.write("function;time;power;energy;samples\n")
     for f, t, e, s, m, n in zip(aggregationLabel, times, execs, powers, energies, samples):
-        table.write(f"{f};{t};{e},{s};{m};{n}\n")
+        table.write(f"{f};{t};{e};{s};{m};{n}\n")
     table.close()
     print(f"CSV saved to {args.table}")
 
@@ -307,7 +318,6 @@ if (args.output):
         output = open(args.output, "wb")
     pickle.dump(aggregatedProfile, output, pickle.HIGHEST_PROTOCOL)
     print(f"Aggregated profile saved to {args.output}")
-
 
 if (not args.quiet):
     relativeSamples = [f"{x / totalSamples:.3f}" for x in samples]
