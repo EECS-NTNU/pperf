@@ -14,8 +14,12 @@ import math
 import operator
 import collections
 import profileLib
+import os
 
 plotly.io.templates.default = 'plotly_white'
+
+if os.path.exists('/opt/plotly-orca/orca'):
+    plotly.io.orca.config.executable = '/opt/plotly-orca/orca'
 
 
 def error(baseline, value, totalBaseline, totalValue, weight):
@@ -122,12 +126,16 @@ parser.add_argument("--coverage", action="store_true", help="output coverage", d
 parser.add_argument("--totals", action="store_true", help="output total", default=False)
 parser.add_argument("--weights", action="store_true", help="output importance", default=False)
 parser.add_argument("-q", "--quiet", action="store_true", help="do not automatically open plot file", default=False)
+parser.add_argument("--pdf", help="output pdf plot")
+parser.add_argument("--width", help="pdf export width", type=int, default=1500)
+parser.add_argument("--height", help="pdf export height", type=int)
+parser.add_argument("--cut-off-symbols", help="number of characters symbol to insert line break (positive) or cut off (negative)", type=int, default=64)
 
 
 args = parser.parse_args()
 
 if (not args.use_time and not args.use_energy and not args.use_power and not args.use_samples and not args.use_exec_times):
-    args.use_energy = True
+    args.use_time = True
 
 if (len(args.name) == 0 and args.names is not False):
     args.name = args.names.split(',')
@@ -182,9 +190,10 @@ if (args.energy_threshold is not 0 and (args.energy_threshold < 0 or args.energy
     parser.print_help()
     sys.exit(0)
 
-if (args.quiet and not args.plot and not args.table):
+if (args.quiet and not args.plot and not args.table and not args.pdf):
+    print("ERROR: don't know what to do")
     parser.print_help()
-    sys.exit(0)
+    sys.exit(1)
 
 if (not args.profiles) or (len(args.profiles) <= 0):
     print("ERROR: unsufficient amount of profiles passed")
@@ -390,15 +399,25 @@ if aggregateFunction is not False:
     rows = numpy.append(rows, errors.reshape(-1, 1), axis=1)
     headers = numpy.array([header], dtype=object)
 
-if (args.plot):
+if (args.plot or args.pdf):
     fig = {'data': []}
-    maxLen = 0
+    if (args.cut_off_symbols > 0):
+        pAggregationLabel = [textwrap.fill(x, args.cut_off_symbols).replace('\n', '<br />') for x in rows[:, 0]]
+        leftMargin = abs(args.cut_off_symbols)
+    elif (args.cut_off_symbols < 0):
+        pAggregationLabel = [f"{x[0:abs(args.cut_off_symbols)]}..." if len(x) > abs(args.cut_off_symbols) else x for x in rows[:, 0]]
+        leftMargin = abs(args.cut_off_symbols) + 3
+    else:
+        pAggregationLabel = rows[:, 0]
+        leftMargin = numpy.max([len(x) for x in pAggregationLabel])
+
+    indices = [i for i, _ in enumerate(rows[:, 0])]
+
     for index, name in enumerate(headers):
-        pAggregationLabel = [textwrap.fill(x, 64).replace('\n', '<br />') for x in rows[:, 0]]
         pBarLabels = [(f'{t * 100:.2f}%' if isinstance(t, float) else t) for t in barLabels[:, index]]
         fig["data"].append(
             go.Bar(
-                y=pAggregationLabel,
+                y=indices,
                 x=rows[:, (index + 1)],
                 name=name,
                 text=pBarLabels,
@@ -407,7 +426,6 @@ if (args.plot):
                 hoverinfo='name+x' if aggregateFunction is False else 'y+x'
             )
         )
-        maxLen = max(maxLen, numpy.max([len(x) for x in rows[:, 0]]))
 
     fig['layout'] = go.Layout(
         title=go.layout.Title(
@@ -428,16 +446,24 @@ if (args.plot):
         yaxis=go.layout.YAxis(
             tickfont=dict(
                 family='monospace',
-                size=11,
+                size=12,
                 color='black'
-            )
+            ),
+            ticktext=pAggregationLabel,
+            tickvals=indices
         ),
         legend=go.layout.Legend(traceorder="reversed"),
-        margin=go.layout.Margin(l=6.8 * min(64, maxLen))
+        margin=go.layout.Margin(l=7.25 * leftMargin)
     )
 
-    plotly.offline.plot(fig, filename=args.plot, auto_open=not args.quiet)
-    print(f"Plot saved to {args.plot}")
+    if (args.plot):
+        plotly.offline.plot(fig, filename=args.plot, auto_open=not args.quiet)
+        print(f"Plot saved to {args.plot}")
+
+    if (args.pdf):
+        go.Figure(fig).update_layout(title=None, margin_t=0).write_image(args.pdf, width=args.width if args.width else None, height=args.height if args.height else None)
+        print(f"PDF saved to {args.pdf}")
+
     del pAggregationLabel
     del fig
 

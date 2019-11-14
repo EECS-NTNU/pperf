@@ -11,11 +11,13 @@ import textwrap
 import tabulate
 import profileLib
 import gc
+import os
 
 plotly.io.templates.default = 'plotly_white'
 
-# plotly.io.orca.config.executable = '/usr/bin/orca'
-#
+if os.path.exists('/opt/plotly-orca/orca'):
+    plotly.io.orca.config.executable = '/opt/plotly-orca/orca'
+
 aggregateKeyNames = ["pc", "binary", "file", "procedure_mangled", "procedure", "line"]
 
 parser = argparse.ArgumentParser(description="Visualize profiles from intrvelf sampler.")
@@ -24,8 +26,12 @@ parser.add_argument("-a", "--aggregate-keys", help=f"aggregate after this list (
 parser.add_argument("-l", "--limit", help="limit output to %% of energy", type=float, default=0)
 parser.add_argument("-t", "--table", help="output csv table")
 parser.add_argument("-p", "--plot", help="plotly html file")
-parser.add_argument("--pdf", help="output pdf plot")
 parser.add_argument("-o", "--output", help="output aggregated profile")
+parser.add_argument("--pdf", help="output pdf plot")
+parser.add_argument("--width", help="pdf export width", type=int, default=1500)
+parser.add_argument("--height", help="pdf export height", type=int)
+parser.add_argument("--cut-off-symbols", help="number of characters symbol to insert line break (positive) or cut off (negative)", type=int, default=64)
+
 parser.add_argument("--account-latency", action="store_true", help="substract latency")
 parser.add_argument("--use-wall-time", action="store_true", help="use sample wall time")
 parser.add_argument("--use-cpu-time", action="store_true", help="use cpu time (default)")
@@ -43,9 +49,10 @@ if (args.limit is not 0 and (args.limit < 0 or args.limit > 1)):
     parser.print_help()
     sys.exit(0)
 
-if (args.quiet and not args.plot and not args.table and not args.output):
+if (args.quiet and not args.plot and not args.table and not args.output and not args.pdf):
+    print("ERROR: don't know what to do")
     parser.print_help()
-    sys.exit(0)
+    sys.exit(1)
 
 if (not args.profiles) or (len(args.profiles) <= 0):
     print("ERROR: unsufficient amount of profiles passed")
@@ -91,7 +98,7 @@ for fileProfile in args.profiles:
         break
 
     if i == 1:
-        aggregatedProfile['toolchain'] = profile['toolchain'];
+        aggregatedProfile['toolchain'] = profile['toolchain']
     elif aggregatedProfile['toolchain'] != profile['toolchain']:
         aggregatedProfile['toolchain'] = 'various'
 
@@ -242,11 +249,21 @@ labels = [f"{x:.4f} s, {x * 1000/a:.3f} ms, {s:.2f} W" + f", {y * 100 / totalEne
 # aggregationLabel = [ re.sub(r'\(.*\)$', '', x) for x in aggregationLabel ]
 
 if (args.plot) or (args.pdf):
-    pAggregationLabel = [textwrap.fill(x, 64).replace('\n', '<br />') for x in aggregationLabel]
+    if (args.cut_off_symbols > 0):
+        pAggregationLabel = [textwrap.fill(x, args.cut_off_symbols).replace('\n', '<br />') for x in aggregationLabel]
+        leftMargin = abs(args.cut_off_symbols)
+    elif (args.cut_off_symbols < 0):
+        pAggregationLabel = [f"{x[0:abs(args.cut_off_symbols)]}..." if len(x) > abs(args.cut_off_symbols) else x for x in aggregationLabel]
+        leftMargin = abs(args.cut_off_symbols) + 3
+    else:
+        pAggregationLabel = aggregationLabel
+        leftMargin = numpy.max([len(x) for x in pAggregationLabel])
+
+    indices = [i for i, _ in enumerate(energies)]
     fig = {
         "data": [go.Bar(
             x=energies,
-            y=pAggregationLabel,
+            y=indices,
             text=labels,
             textposition='auto',
             orientation='h',
@@ -271,21 +288,23 @@ if (args.plot) or (args.pdf):
             yaxis=go.layout.YAxis(
                 tickfont=dict(
                     family='monospace',
-                    size=11,
+                    size=12,
                     color='black'
-                )
+                ),
+                ticktext=pAggregationLabel,
+                tickvals=indices,
             ),
-            margin=go.layout.Margin(l=6.2 * min(64, numpy.max([len(x) for x in aggregationLabel])))
+            margin=go.layout.Margin(l=7.25 * leftMargin)
         )
     }
-
-    if (args.pdf):
-        go.Figure(fig).write_image(args.pdf)
-        print(f"Plot saved to {args.pdf}")
 
     if (args.plot):
         plotly.offline.plot(fig, filename=args.plot, auto_open=not args.quiet)
         print(f"Plot saved to {args.plot}")
+
+    if (args.pdf):
+        go.Figure(fig).update_layout(title=None, margin_t=0).write_image(args.pdf, width=args.width if args.width else None, height=args.height if args.height else None)
+        print(f"PDF saved to {args.pdf}")
 
     del pAggregationLabel
     del fig

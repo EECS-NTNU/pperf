@@ -14,6 +14,9 @@ import gc
 
 plotly.io.templates.default = 'plotly_white'
 
+if os.path.exists('/opt/plotly-orca/orca'):
+    plotly.io.orca.config.executable = '/opt/plotly-orca/orca'
+
 parser = argparse.ArgumentParser(description="Visualize profiles from intrvelf sampler.")
 parser.add_argument("profile", help="postprocessed profile from intrvelf")
 parser.add_argument("-s", "--start", type=float, help="plot start time (seconds)")
@@ -22,12 +25,16 @@ parser.add_argument("-n", "--no-threads", action="store_true", help="interpolate
 parser.add_argument("-i", "--interpolate", type=int, help="interpolate samples")
 parser.add_argument("-p", "--plot", help="plot output html file")
 parser.add_argument("-q", "--quiet", action="store_true", help="do not automatically open plot")
+parser.add_argument("--pdf", help="output pdf plot")
+parser.add_argument("--width", help="pdf export width", type=int, default=1500)
+parser.add_argument("--height", help="pdf export height", type=int)
 
 args = parser.parse_args()
 
-if (not args.plot):
+if (not args.plot) and (not args.pdf):
+    print("ERROR: don't know what to do")
     parser.print_help()
-    sys.exit(0)
+    sys.exit(1)
 
 if (not args.profile) or (not os.path.isfile(args.profile)):
     print("ERROR: profile not found")
@@ -136,9 +143,14 @@ fig = plotly.subplots.make_subplots(
     specs=[[{}]] if args.no_threads else [[{}], [{}]],
     shared_xaxes=True,
     shared_yaxes=False,
+    x_title="Time in Seconds",
     vertical_spacing=0.001,
     print_grid=False
 )
+
+# Change font of the create annotations (x_title)
+for a in fig.layout.annotations:
+    a["font"] = {'size': 18, 'family': 'Courier New, monospace', 'color': '#7f7f7f'}
 
 fig['layout'].update(
     title=go.layout.Title(
@@ -147,17 +159,6 @@ fig['layout'].update(
         x=0
     ),
     showlegend=False,
-)
-
-fig['layout']['xaxis'].update(
-    title=go.layout.xaxis.Title(
-        text='Time in Seconds',
-        font=dict(
-            family='Courier New, monospace',
-            size=18,
-            color='#7f7f7f'
-        )
-    ),
 )
 
 fig['layout']['yaxis1'].update(
@@ -229,5 +230,10 @@ del threadDisplay
 gc.collect()
 
 sys.stdout.flush()
-plotly.offline.plot(fig, filename=args.plot, auto_open=not args.quiet)
-print(f"Plot saved to {args.plot}")
+if (args.plot):
+    plotly.offline.plot(fig, filename=args.plot, auto_open=not args.quiet)
+    print(f"Plot saved to {args.plot}")
+
+if (args.pdf):
+    go.Figure(fig).update_layout(title=None, margin_t=0).write_image(args.pdf, width=args.width if args.width else None, height=args.height if args.height else None)
+    print(f"PDF saved to {args.pdf}")
