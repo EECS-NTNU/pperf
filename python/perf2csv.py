@@ -10,8 +10,8 @@ parser = argparse.ArgumentParser(description="Parse perf data to csv/vmmap")
 parser.add_argument("perfdata", help="perf-data from perf record")
 parser.add_argument("-o", "--output", help="output csv")
 parser.add_argument("-v", "--vmmap", help="output vmmap")
-parser.add_argument("--target", help="set target executeable")
-parser.add_argument("--perf", help="use this perf executable")
+parser.add_argument("-t", "--target", help="set target executeable")
+parser.add_argument("-p", "--perf", help="use this perf executable")
 
 args = parser.parse_args()
 
@@ -39,7 +39,9 @@ else:
 if (args.vmmap):
     vmmapFile = open(args.vmmap, "w")
 
-csvFile.write("time;pc0\n")
+
+samples = []
+seenCpus = []
 
 targetParentId = None
 
@@ -51,7 +53,7 @@ for line in perf.stdout:
 
     sample = line.split(": ")
     sampleStat = sample[0].split(" ")
-
+    sampleCpu = int(sampleStat[0])
     sampleTime = int(sampleStat[1])
     if (sampleTime is 0):
         continue
@@ -99,17 +101,37 @@ for line in perf.stdout:
             vmmapFile.write(f'0x{sampleMmapBaseAddr:016x} 0x{sampleMmapLength:016x} {sampleMmapTarget}\n')
 
     if sampleType is 'PERF_RECORD_SAMPLE':
-        csvFile.write(f'{float(sampleTime) / 1000000000.0:.16f};{samplePc}\n')
+        if sampleCpu not in seenCpus:
+            seenCpus.append(sampleCpu)
+        samples.append([sampleTime, sampleCpu, samplePc])
 
     # print(f"Type {sampleType}, Source {sampleSource}, Time {sampleTime}, ParentId {sampleParentId}, ThreadId {sampleThreadId}, PC {samplePc}, BaseAddr {sampleMmapBaseAddr}, Length {sampleMmapLength}, Target {sampleMmapTarget}")
 
 perf.wait()
 
-
 if perf.returncode is not 0:
     print("ERROR: perf report failed!")
     print(perf.stderr.read().decode('utf-8'))
     sys.exit(1)
+
+if args.output.endswith(".bz2"):
+    csvFile = bz2.open(args.output, "wt")
+else:
+    csvFile = open(args.output, "w")
+
+csvFile.write('time')
+for cpu in seenCpus:
+    csvFile.write(f';pc{cpu}')
+csvFile.write('\n')
+
+pcVector = [0] * (max(seenCpus) + 1)
+for sample in samples:
+    csvFile.write(f'{float(sample[0]) / 1000000000.0:.16f}')
+    pcVector[sample[1]] = sample[2]
+    for cpu in seenCpus:
+        csvFile.write(f';{pcVector[cpu]}')
+    csvFile.write('\n')
+
 
 if args.vmmap and targetParentId is None:
     print("WARNING: no executable found that was memory mapped")
