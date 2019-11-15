@@ -14,12 +14,9 @@ import math
 import operator
 import collections
 import profileLib
-import os
+import plotlyExport
 
 plotly.io.templates.default = 'plotly_white'
-
-if os.path.exists('/opt/plotly-orca/orca'):
-    plotly.io.orca.config.executable = '/opt/plotly-orca/orca'
 
 
 def error(baseline, value, totalBaseline, totalValue, weight):
@@ -455,14 +452,18 @@ if (args.plot or args.export):
         legend=go.layout.Legend(traceorder="reversed"),
         margin=go.layout.Margin(l=10 + (7.00 * leftMargin))
     )
+    if (args.export):
+        plotlyExport.exportFigure(
+            go.Figure(fig).update_layout(title=None, margin_t=0, margin_r=0),
+            args.width if args.width else None,
+            args.height if args.height else None,
+            args.export
+        )
+        print(f"Exported to {args.export}")
 
     if (args.plot):
         plotly.offline.plot(fig, filename=args.plot, auto_open=not args.quiet)
         print(f"Plot saved to {args.plot}")
-
-    if (args.export):
-        go.Figure(fig).update_layout(title=None, margin_t=0, margin_r=0).write_image(args.export, width=args.width if args.width else None, height=args.height if args.height else None)
-        print(f"Exported to {args.export}")
 
     del pAggregationLabel
     del fig

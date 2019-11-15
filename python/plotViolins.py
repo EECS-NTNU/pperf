@@ -9,6 +9,8 @@ import pandas
 import collections
 import statistics
 import os
+import plotlyExport
+
 
 plotly.io.templates.default = 'plotly_white'
 
@@ -40,10 +42,6 @@ if (args.sharpness <= 0):
     print("ERROR: violin sharpness must be bigger than 0")
     parser.print_help()
     sys.exit(1)
-
-if (args.export and args.points is not 'none'):
-    print("WARNING: Export with points and high violin sharpnesses can be unstable")
-
 
 if (not args.profiles) or (len(args.profiles) <= 0):
     print("ERROR: unsufficient amount of profiles passed")
@@ -77,8 +75,6 @@ fig = go.Figure()
 index = 0
 annotations = []
 for violin in violins:
-    # yposlist = tips.groupby(['day'])['total_bill'].median().tolist()
-    # xposlist = range(len(yposlist))
     mean = statistics.mean(violins[violin])
     fig.add_trace(go.Violin(
         y=violins[violin],
@@ -101,7 +97,12 @@ if args.means:
     fig.update_layout(annotations=annotations)
 
 if (args.export):
-    go.Figure(fig).update_layout(showlegend=False, title=None, margin_t=0, margin_r=0, margin_l=0).write_image(args.export, width=args.width if args.width else None, height=args.height if args.height else None)
+    plotlyExport.exportFigure(
+        go.Figure(fig).update_layout(showlegend=False, title=None, margin_t=0, margin_r=0, margin_l=0),
+        args.width if args.width else None,
+        args.height if args.height else None,
+        args.export
+    )
     print(f"Exported to {args.export}")
 
 if (args.plot):
