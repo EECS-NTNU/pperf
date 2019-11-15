@@ -25,13 +25,13 @@ parser.add_argument("-n", "--no-threads", action="store_true", help="interpolate
 parser.add_argument("-i", "--interpolate", type=int, help="interpolate samples")
 parser.add_argument("-p", "--plot", help="plot output html file")
 parser.add_argument("-q", "--quiet", action="store_true", help="do not automatically open plot")
-parser.add_argument("--pdf", help="output pdf plot")
-parser.add_argument("--width", help="pdf export width", type=int, default=1500)
-parser.add_argument("--height", help="pdf export height", type=int)
+parser.add_argument("--export", help="export plot (pdf, svg, png,...)")
+parser.add_argument("--width", help="export width", type=int, default=1500)
+parser.add_argument("--height", help="export height", type=int)
 
 args = parser.parse_args()
 
-if (not args.plot) and (not args.pdf):
+if (not args.plot) and (not args.export):
     print("ERROR: don't know what to do")
     parser.print_help()
     sys.exit(1)
@@ -150,7 +150,7 @@ fig = plotly.subplots.make_subplots(
 
 # Change font of the create annotations (x_title)
 for a in fig.layout.annotations:
-    a["font"] = {'size': 18, 'family': 'Courier New, monospace', 'color': '#7f7f7f'}
+    a["font"] = {'size': 18, 'family': 'Courier New, monospace', 'color': 'black'}
 
 fig['layout'].update(
     title=go.layout.Title(
@@ -167,7 +167,7 @@ fig['layout']['yaxis1'].update(
         font=dict(
             family='Courier New, monospace',
             size=18,
-            color='#7f7f7f'
+            color='black'  # '#7f7f7f'
         )
     ),
     domain=[threadAxisHeight, 1]
@@ -199,7 +199,7 @@ if not args.no_threads:
             font=dict(
                 family='Courier New, monospace',
                 size=18,
-                color='#7f7f7f'
+                color='black'  # '#7f7f7f'
             )
         ),
         tickvals=ticknumbers,
@@ -234,6 +234,6 @@ if (args.plot):
     plotly.offline.plot(fig, filename=args.plot, auto_open=not args.quiet)
     print(f"Plot saved to {args.plot}")
 
-if (args.pdf):
-    go.Figure(fig).update_layout(title=None, margin_t=0).write_image(args.pdf, width=args.width if args.width else None, height=args.height if args.height else None)
-    print(f"PDF saved to {args.pdf}")
+if (args.export):
+    go.Figure(fig).update_layout(title=None, margin_t=0, margin_r=0).write_image(args.export, width=args.width if args.width else None, height=args.height if args.height else None)
+    print(f"Exported to {args.export}")

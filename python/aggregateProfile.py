@@ -27,11 +27,10 @@ parser.add_argument("-l", "--limit", help="limit output to %% of energy", type=f
 parser.add_argument("-t", "--table", help="output csv table")
 parser.add_argument("-p", "--plot", help="plotly html file")
 parser.add_argument("-o", "--output", help="output aggregated profile")
-parser.add_argument("--pdf", help="output pdf plot")
-parser.add_argument("--width", help="pdf export width", type=int, default=1500)
-parser.add_argument("--height", help="pdf export height", type=int)
+parser.add_argument("--export", help="export plot (pdf, svg, png,...)")
+parser.add_argument("--width", help="export width", type=int, default=1500)
+parser.add_argument("--height", help="export height", type=int)
 parser.add_argument("--cut-off-symbols", help="number of characters symbol to insert line break (positive) or cut off (negative)", type=int, default=64)
-
 parser.add_argument("--account-latency", action="store_true", help="substract latency")
 parser.add_argument("--use-wall-time", action="store_true", help="use sample wall time")
 parser.add_argument("--use-cpu-time", action="store_true", help="use cpu time (default)")
@@ -49,7 +48,7 @@ if (args.limit is not 0 and (args.limit < 0 or args.limit > 1)):
     parser.print_help()
     sys.exit(0)
 
-if (args.quiet and not args.plot and not args.table and not args.output and not args.pdf):
+if (args.quiet and not args.plot and not args.table and not args.output and not args.export):
     print("ERROR: don't know what to do")
     parser.print_help()
     sys.exit(1)
@@ -248,7 +247,7 @@ labels = [f"{x:.4f} s, {x * 1000/a:.3f} ms, {s:.2f} W" + f", {y * 100 / totalEne
 
 # aggregationLabel = [ re.sub(r'\(.*\)$', '', x) for x in aggregationLabel ]
 
-if (args.plot) or (args.pdf):
+if (args.plot) or (args.export):
     if (args.cut_off_symbols > 0):
         pAggregationLabel = [textwrap.fill(x, args.cut_off_symbols).replace('\n', '<br />') for x in aggregationLabel]
         leftMargin = abs(args.cut_off_symbols)
@@ -281,7 +280,7 @@ if (args.plot) or (args.pdf):
                     font=dict(
                         family='Courier New, monospace',
                         size=18,
-                        color='#7f7f7f'
+                        color='black'  # '#7f7f7f'
                     )
                 )
             ),
@@ -294,7 +293,7 @@ if (args.plot) or (args.pdf):
                 ticktext=pAggregationLabel,
                 tickvals=indices,
             ),
-            margin=go.layout.Margin(l=7.25 * leftMargin)
+            margin=go.layout.Margin(l=10 + (7.00 * leftMargin))
         )
     }
 
@@ -302,9 +301,9 @@ if (args.plot) or (args.pdf):
         plotly.offline.plot(fig, filename=args.plot, auto_open=not args.quiet)
         print(f"Plot saved to {args.plot}")
 
-    if (args.pdf):
-        go.Figure(fig).update_layout(title=None, margin_t=0).write_image(args.pdf, width=args.width if args.width else None, height=args.height if args.height else None)
-        print(f"PDF saved to {args.pdf}")
+    if (args.export):
+        go.Figure(fig).update_layout(title=None, margin_t=0, margin_r=0).write_image(args.export, width=args.width if args.width else None, height=args.height if args.height else None)
+        print(f"Exported to {args.export}")
 
     del pAggregationLabel
     del fig

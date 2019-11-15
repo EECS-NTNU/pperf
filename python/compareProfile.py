@@ -126,9 +126,9 @@ parser.add_argument("--coverage", action="store_true", help="output coverage", d
 parser.add_argument("--totals", action="store_true", help="output total", default=False)
 parser.add_argument("--weights", action="store_true", help="output importance", default=False)
 parser.add_argument("-q", "--quiet", action="store_true", help="do not automatically open plot file", default=False)
-parser.add_argument("--pdf", help="output pdf plot")
-parser.add_argument("--width", help="pdf export width", type=int, default=1500)
-parser.add_argument("--height", help="pdf export height", type=int)
+parser.add_argument("--export", help="export plot (pdf, svg, png,...)")
+parser.add_argument("--width", help="export width", type=int, default=1500)
+parser.add_argument("--height", help="export height", type=int)
 parser.add_argument("--cut-off-symbols", help="number of characters symbol to insert line break (positive) or cut off (negative)", type=int, default=64)
 
 
@@ -190,7 +190,7 @@ if (args.energy_threshold is not 0 and (args.energy_threshold < 0 or args.energy
     parser.print_help()
     sys.exit(0)
 
-if (args.quiet and not args.plot and not args.table and not args.pdf):
+if (args.quiet and not args.plot and not args.table and not args.export):
     print("ERROR: don't know what to do")
     parser.print_help()
     sys.exit(1)
@@ -399,7 +399,7 @@ if aggregateFunction is not False:
     rows = numpy.append(rows, errors.reshape(-1, 1), axis=1)
     headers = numpy.array([header], dtype=object)
 
-if (args.plot or args.pdf):
+if (args.plot or args.export):
     fig = {'data': []}
     if (args.cut_off_symbols > 0):
         pAggregationLabel = [textwrap.fill(x, args.cut_off_symbols).replace('\n', '<br />') for x in rows[:, 0]]
@@ -439,7 +439,7 @@ if (args.plot or args.pdf):
                 font=dict(
                     family='Courier New, monospace',
                     size=18,
-                    color='#7f7f7f'
+                    color='black'  # '#7f7f7f'
                 )
             )
         ),
@@ -453,16 +453,16 @@ if (args.plot or args.pdf):
             tickvals=indices
         ),
         legend=go.layout.Legend(traceorder="reversed"),
-        margin=go.layout.Margin(l=7.25 * leftMargin)
+        margin=go.layout.Margin(l=10 + (7.00 * leftMargin))
     )
 
     if (args.plot):
         plotly.offline.plot(fig, filename=args.plot, auto_open=not args.quiet)
         print(f"Plot saved to {args.plot}")
 
-    if (args.pdf):
-        go.Figure(fig).update_layout(title=None, margin_t=0).write_image(args.pdf, width=args.width if args.width else None, height=args.height if args.height else None)
-        print(f"PDF saved to {args.pdf}")
+    if (args.export):
+        go.Figure(fig).update_layout(title=None, margin_t=0, margin_r=0).write_image(args.export, width=args.width if args.width else None, height=args.height if args.height else None)
+        print(f"Exported to {args.export}")
 
     del pAggregationLabel
     del fig
