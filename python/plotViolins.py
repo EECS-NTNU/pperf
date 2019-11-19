@@ -24,6 +24,7 @@ parser.add_argument("--means", action="store_true", help="show mean values", def
 parser.add_argument("--boxes", action="store_true", help="show integrated box diagram", default=False)
 parser.add_argument("--asc", action="store_true", help="sort after mean ascending", default=False)
 parser.add_argument("--desc", action="store_true", help="sort after mean descending", default=False)
+parser.add_argument("--horizontal", action="store_true", help="output a horizontal graph", default=False)
 parser.add_argument("-s", "--sharpness", help="violin sharpness (> 0)", type=int, default=1000)
 parser.add_argument("-p", "--plot", help="plotly html file")
 parser.add_argument("--export", help="export plot (pdf, svg, png,...)")
@@ -63,7 +64,7 @@ for profile in args.profiles:
         weightColumn = columns[weightIndex]
         dataColumn = columns[weightIndex + 1]
         for _, row in pddata.iterrows():
-            data = numpy.append(data, [row[dataColumn]] * max(1, int(args.sharpness * row[weightColumn])))
+            data = numpy.append(data, [row[dataColumn]] * max(1, int(args.sharpness * abs(row[weightColumn]))))
 
     violins[dataColumn] = data
 
@@ -77,7 +78,8 @@ annotations = []
 for violin in violins:
     mean = statistics.mean(violins[violin])
     fig.add_trace(go.Violin(
-        y=violins[violin],
+        y=None if args.horizontal else violins[violin],
+        x=violins[violin] if args.horizontal else None,
         name=violin,
         box_visible=args.boxes,
         points=False if args.points is 'none' else args.points,
@@ -92,9 +94,16 @@ for violin in violins:
         annotations.append(go.layout.Annotation(x=index, y=mean, text=f'{mean:.2f}', ax=20))
     index += 1
 
-fig.update_yaxes(rangemode="nonnegative")
+if args.horizontal:
+    fig.update_traces(orientation='h', side='positive', width=1.5)
+    fig.update_xaxes(rangemode="nonnegative")
+    fig.update_layout(margin_pad=10)
+else:
+    fig.update_yaxes(rangemode="nonnegative")
+
 if args.means:
     fig.update_layout(annotations=annotations)
+
 
 if (args.export):
     plotlyExport.exportFigure(

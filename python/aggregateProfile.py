@@ -20,6 +20,8 @@ aggregateKeyNames = ["pc", "binary", "file", "procedure_mangled", "procedure", "
 parser = argparse.ArgumentParser(description="Visualize profiles from intrvelf sampler.")
 parser.add_argument("profiles", help="postprocessed profiles from intrvelf", nargs="+")
 parser.add_argument("-a", "--aggregate-keys", help=f"aggregate after this list (%(default)s) e.g.: {','.join(aggregateKeyNames)}", default="binary,procedure")
+parser.add_argument("--use-time", action="store_true", help="sort and plot based on time (default)", default=False)
+parser.add_argument("--use-energy", action="store_true", help="sort and plot based on energy", default=False)
 parser.add_argument("-l", "--limit", help="limit output to %% of energy", type=float, default=0)
 parser.add_argument("-t", "--table", help="output csv table")
 parser.add_argument("-p", "--plot", help="plotly html file")
@@ -36,6 +38,8 @@ parser.add_argument("-q", "--quiet", action="store_true", help="do not automatic
 
 args = parser.parse_args()
 
+if (args.use_time is False and args.use_energy is False):
+    args.use_time = True
 
 if not args.use_cpu_time and not args.use_wall_time:
     args.use_cpu_time = True
@@ -208,7 +212,10 @@ avgSampleTime = aggregatedProfile['samplingTime'] / aggregatedProfile['samples']
 frequency = 1 / avgSampleTime
 
 values = numpy.array(list(aggregatedProfile['profile'].values()), dtype=object)
-values = values[values[:, profileLib.aggTime].argsort()]
+if (args.use_time):
+    values = values[values[:, profileLib.aggTime].argsort()]
+else:
+    values = values[values[:, profileLib.aggEnergy].argsort()]
 
 times = numpy.array(values[:, profileLib.aggTime], dtype=float)
 powers = numpy.array(values[:, profileLib.aggPower], dtype=float)
@@ -239,7 +246,7 @@ if args.limit is not 0:
             samples = samples[cutOff:]
             break
 
-labels = [f"{x:.4f} s, {x * 1000/a:.3f} ms, {s:.2f} W" + f", {y * 100 / totalEnergy if totalEnergy > 0 else 0:.2f}%" for x, a, s, y in zip(times, execs, powers, energies)]
+labels = [f"{x:.4f} s, {s:.2f} W" + (f", {x * 100 / totalTime if totalTime > 0 else 0:.2f}%" if args.use_time else f", {y * 100 / totalEnergy if totalEnergy > 0 else 0:.2f}%") for x, s, y in zip(times, powers, energies)]
 
 
 # aggregationLabel = [ re.sub(r'\(.*\)$', '', x) for x in aggregationLabel ]
@@ -258,7 +265,7 @@ if (args.plot) or (args.export):
     indices = [i for i, _ in enumerate(energies)]
     fig = {
         "data": [go.Bar(
-            x=energies,
+            x=times if args.use_time else energies,
             y=indices,
             text=labels,
             textposition='auto',
@@ -273,7 +280,7 @@ if (args.plot) or (args.export):
             ),
             xaxis=go.layout.XAxis(
                 title=go.layout.xaxis.Title(
-                    text="Energy in J",
+                    text="Time in s" if args.use_time else "Energy in J",
                     font=dict(
                         family='Courier New, monospace',
                         size=18,
