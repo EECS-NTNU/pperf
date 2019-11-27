@@ -58,6 +58,7 @@ if (header[0] != 0 or header[1] != 3 or header[2] != 0 or header[4] != 0):
 binOffset = 5 * binWordSize
 
 sampleCount = 0
+stackTraces = 0
 runningTime = 0.0
 samplingPeriod = float(header[3]) / 1000000.0
 
@@ -82,12 +83,13 @@ while (True):
         break  # Binary trail detected
 
     sampleCount += sample[0]
+    stackTraces += sample[1] - 1
 
     for i in range(sample[0]):
         runningTime += samplingPeriod
         csvFile.write(f'{runningTime:.16f};{sample[2]}\n')
 
-print(f"Extracted {sampleCount} samples for {runningTime:.2f}s sampling time with a sampling period of {int(samplingPeriod * 1000000.0)} us")
+print(f"Extracted {sampleCount} samples (ignored {stackTraces} stack traces) for {runningTime:.2f}s sampling time")
 
 csvFile.close()
 
