@@ -15,6 +15,7 @@ import operator
 import collections
 import profileLib
 import plotlyExport
+import statistics
 
 plotly.io.templates.default = 'plotly_white'
 
@@ -71,6 +72,14 @@ def aggregateMean(baselines, values, totalBaseline, totalValue, weights):
     return sum(values) / len(values)
 
 
+def aggregateWeightedMean(baselines, values, totalBaseline, totalValue, weights):
+    return sum([value * weight for value, weight in zip(values, weights)])
+    explodedData = []
+    for value, weight in zip(values, weights):
+        explodedData = numpy.append(explodedData, [value] * max(1, int(10000 * abs(weight))))
+    return statistics.mean(explodedData)
+
+
 def aggregateRootMeanSquaredError(baselines, values, totalBaseline, totalValue, weights):
     return math.sqrt(sum([math.pow(error(baseline, value, totalBaseline, totalValue, weight), 2) for baseline, value, weight in zip(baselines, values, weights)]) / len(values))
 
@@ -96,6 +105,7 @@ aggregateFunctions = numpy.array([
     ['min', 'Minimum', aggregateMin, True],
     ['max', 'Maximum', aggregateMax, True],
     ['mean', 'Mean', aggregateMean, True],
+    ['wmean', 'Weighted Mean', aggregateWeightedMean, True],
     ['rmse', 'Root Mean Squared Error', aggregateRootMeanSquaredError, False],
     ['wrmse', 'Weighted Root Mean Squared Error', aggregateWeightedRootMeanSquaredError, False]
 ])
@@ -400,10 +410,10 @@ if (args.plot or args.export):
     fig = {'data': []}
     if (args.cut_off_symbols > 0):
         pAggregationLabel = [textwrap.fill(x, args.cut_off_symbols).replace('\n', '<br />') for x in rows[:, 0]]
-        leftMargin = abs(args.cut_off_symbols)
+        leftMargin = min(abs(args.cut_off_symbols), numpy.max([len(x) for x in rows[:, 0]]))
     elif (args.cut_off_symbols < 0):
         pAggregationLabel = [f"{x[0:abs(args.cut_off_symbols)]}..." if len(x) > abs(args.cut_off_symbols) else x for x in rows[:, 0]]
-        leftMargin = abs(args.cut_off_symbols) + 3
+        leftMargin = min(abs(args.cut_off_symbols) + 3, numpy.max([len(x) for x in rows[:, 0]]))
     else:
         pAggregationLabel = rows[:, 0]
         leftMargin = numpy.max([len(x) for x in pAggregationLabel])
