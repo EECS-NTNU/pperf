@@ -20,7 +20,6 @@ parser = argparse.ArgumentParser(description="Parse gperf data to csv/vmmap")
 parser.add_argument("cpuprofile", help="cpuprofile from gperf")
 parser.add_argument("-o", "--output", help="output csv")
 parser.add_argument("-v", "--vmmap", help="output vmmap")
-parser.add_argument("-t", "--target", help="set target executeable")
 parser.add_argument("-l", "--little-endian", action="store_true", help="parse cpuprofile using little endianess")
 parser.add_argument("-b", "--big-endian", action="store_true", help="parse cpuprofile using big endianess")
 
