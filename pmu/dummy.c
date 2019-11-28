@@ -6,7 +6,7 @@ struct PMUData {
 } __attribute__((packed));
 
  const char *pmuAbout(void) {
-   return "Dummy PMU, always reports 1.0 as PMU_POWER";
+   return "Dummy PMU, always reports 0.0 as PMU_POWER";
  }
 
 int pmuInit(char *pmuArg) {
@@ -15,7 +15,7 @@ int pmuInit(char *pmuArg) {
 }
 
 void pmuRead(struct PMUData *data) {
-  data->value = 1.0;
+  data->value = 0.0;
 }
 
 uint32_t pmuDataSize(void) {

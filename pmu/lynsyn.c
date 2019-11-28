@@ -19,7 +19,16 @@
  *
  *****************************************************************************/
 #include "pmu.h"
-#include "lynsyn.h"
+#include <argp.h>
+#include <assert.h>
+#include <stdio.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <stdint.h>
+#include <stdbool.h>
+#include <string.h>
+#include <libusb.h>
+#include <usbprotocol.h>
 
 struct PMUData {
   double value;

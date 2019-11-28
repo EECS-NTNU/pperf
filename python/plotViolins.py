@@ -86,6 +86,7 @@ for violin in violins:
         pointpos=0,
         jitter=0,
         meanline_visible=True,
+        line_width=1,
         line_color='rgba(60,80,158,0.6)',
         fillcolor='rgba(121, 162, 206, 1.0)'
     ))
