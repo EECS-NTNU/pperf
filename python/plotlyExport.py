@@ -5,13 +5,25 @@ import plotly.graph_objects as go
 import os
 import subprocess
 import tempfile
+import shutil
 
-orca = 'orca'
+defaultOrca = ['/opt/plotly-orca/orca', '/opt/plotly/orca', '/opt/orca/orca', '/usr/bin/orca', 'orca']
+
+orcaBin = os.getenv('PLOTLY_ORCA')
 orcaArgs = ['--mathjax', 'https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/MathJax.js']
 
-if os.path.exists('/opt/plotly-orca/orca'):
-    orca = '/opt/plotly-orca/orca'
-    plotly.io.orca.config.executable = '/opt/plotly-orca/orca'
+if orcaBin is None:
+    for executable in defaultOrca:
+        if (shutil.which(executable)):
+            orcaBin = executable
+            break
+else:
+    orcaBin = shutil.which(orcaBin)
+
+if orcaBin is None:
+    raise Exception('Could not find orca!')
+
+plotly.io.orca.config.executable = orcaBin
 
 
 def exportFigure(fig, width, height, exportFile):
@@ -24,7 +36,7 @@ def exportFigure(fig, width, height, exportFile):
         fileExtension = fileExtension.lstrip('.')
         go.Figure(fig).write_json(tmpFile)
 
-        cmd = [orca]
+        cmd = [orcaBin]
         cmd.extend(['graph', tmpFile, '--output-dir', exportDir, '--output', exportFilename, '--format', fileExtension])
         if width is not None:
             cmd.extend(['--width', f'{width}'])
