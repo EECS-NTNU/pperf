@@ -20,6 +20,7 @@ parser = argparse.ArgumentParser(description="Parse gperf data to csv/vmmap")
 parser.add_argument("cpuprofile", help="cpuprofile from gperf")
 parser.add_argument("-o", "--output", help="output csv")
 parser.add_argument("-v", "--vmmap", help="output vmmap")
+parser.add_argument("-t", "--time", type=float, help="use runtime instead of internal period")
 parser.add_argument("-l", "--little-endian", action="store_true", help="parse cpuprofile using little endianess")
 parser.add_argument("-b", "--big-endian", action="store_true", help="parse cpuprofile using big endianess")
 
@@ -32,6 +33,11 @@ if (not args.output):
 
 if (not args.cpuprofile) or (not os.path.isfile(args.cpuprofile)):
     print("ERROR: file for cpuprofile found!")
+    parser.print_help()
+    sys.exit(1)
+
+if (args.time and args.time <= 0):
+    print("ERROR: time can't be negative or 0!")
     parser.print_help()
     sys.exit(1)
 
@@ -57,17 +63,10 @@ if (header[0] != 0 or header[1] != 3 or header[2] != 0 or header[4] != 0):
 
 binOffset = 5 * binWordSize
 
+samples = []
 sampleCount = 0
 stackTraces = 0
-runningTime = 0.0
-samplingPeriod = float(header[3]) / 1000000.0
 
-if args.output.endswith(".bz2"):
-    csvFile = bz2.open(args.output, "wt")
-else:
-    csvFile = open(args.output, "w")
-
-csvFile.write('time;pc0\n')
 # csvFile.write('0;0\n')
 
 while (True):
@@ -86,10 +85,25 @@ while (True):
     stackTraces += sample[1] - 1
 
     for i in range(sample[0]):
-        runningTime += samplingPeriod
-        csvFile.write(f'{runningTime:.16f};{sample[2]}\n')
+        samples.append(sample[2])
 
-print(f"Extracted {sampleCount} samples (ignored {stackTraces} stack traces) for {runningTime:.2f}s sampling time")
+samplingPeriod = float(header[3]) / 1000000.0 if not args.time else args.time / len(samples)
+
+print(f"Extracted {sampleCount} samples (ignored {stackTraces} stack traces) for {len(samples) * samplingPeriod:.2f}s sampling time")
+
+if args.output.endswith(".bz2"):
+    csvFile = bz2.open(args.output, "wt")
+else:
+    csvFile = open(args.output, "w")
+
+csvFile.write('time;pc0\n')
+runningTime = 0.0
+
+for sample in samples:
+    runningTime += samplingPeriod
+    csvFile.write(f'{runningTime:.16f};{sample}\n')
+
+print(f"Wrote to {args.output}")
 
 csvFile.close()
 
@@ -121,8 +135,8 @@ for line in binProfile[binOffset:].decode('utf-8').split('\n')[:-1]:
 
 print(f"Extracted {vmmapCount} vmmaps")
 
+vmmapFile.close()
 
-if (args.vmmap):
-    vmmapFile.close()
+print(f"Wrote to {args.vmmap}")
 
 csvFile.close()

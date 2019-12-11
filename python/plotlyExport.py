@@ -14,16 +14,14 @@ orcaArgs = ['--mathjax', 'https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/M
 
 if orcaBin is None:
     for executable in defaultOrca:
-        if (shutil.which(executable)):
-            orcaBin = executable
+        orcaBin = shutil.which(executable)
+        if orcaBin is not None:
             break
 else:
     orcaBin = shutil.which(orcaBin)
 
 if orcaBin is None:
     raise Exception('Could not find orca!')
-
-plotly.io.orca.config.executable = orcaBin
 
 
 def exportFigure(fig, width, height, exportFile):
@@ -46,8 +44,8 @@ def exportFigure(fig, width, height, exportFile):
         subprocess.run(cmd, check=True)
     finally:
         os.remove(tmpFile)
-    pass
 
 
 def exportInternal(fig, width, height, exportFile):
+    plotly.io.orca.config.executable = orcaBin
     go.Figure(fig).write_image(exportFile, width=width, height=height)
