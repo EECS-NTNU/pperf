@@ -25,7 +25,7 @@ pmu/%.o : pmu/%.c
 	$(CROSS_COMPILE)$(CC) $(FLAGS) $(INCLUDES) $(DEFINES) -c $< -o $@
 
 clean:
-    rm -Rf $(DEPDIR)
+	rm -Rf $(DEPDIR)
 	rm -Rf $(DEPDIR)/sthem
 	rm -Rf $(DEPDIR)/tulipp-tool-chain
 	rm -Rf pmu/*.o *.o $(TARGETS)
