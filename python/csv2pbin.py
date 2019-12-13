@@ -105,7 +105,7 @@ i = 0
 sampleCount = profile['samples']
 prevTime = None
 lastTime = time.time()
-updateInterval = int(sampleCount / 200)
+updateInterval = max(1, int(sampleCount / 200))
 wallTime = 0.0
 
 header = [x.lower() for x in next(csvProfile)]

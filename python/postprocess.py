@@ -177,7 +177,7 @@ i = 0
 prevThreadCpuTimes = {}
 offsetSampleWallTime = None
 lastTime = time.time()
-updateInterval = int(sampleCount / 200)
+updateInterval = max(1, int(sampleCount / 200))
 
 for sample in rawSamples:
     if (i % updateInterval == 0):
