@@ -24,7 +24,8 @@ aggSamples = 3
 aggExecs = 4
 aggLabel = 5
 
-disableCache = False if 'DISABLE_CACHE' not in os.environ else (True if os.environ['DISABLE_CACHE'] == '1' else False)
+disableInlineUnwinding = False if 'UNWIND_INLINE' not in os.environ else (True if os.environ['UNWIND_INLINE'] == '0' else False)
+disableCache = True if disableInlineUnwinding else (False if 'DISABLE_CACHE' not in os.environ else (True if os.environ['DISABLE_CACHE'] == '1' else False))
 crossCompile = "" if 'CROSS_COMPILE' not in os.environ else os.environ['CROSS_COMPILE']
 _cppfiltCache = {}
 _toolchainVersion = False
@@ -114,7 +115,9 @@ def batchAddr2line(elf, pcs, demangle=True):
 
 def addr2line(elf, pc, demangle=True):
     global crossCompile
-    addr2line = subprocess.run(f"{crossCompile}addr2line -fsai -e {elf} {pc:x}", shell=True, stdout=subprocess.PIPE)
+    global disableInlineUnwinding
+    inlineOption = 'i' if not disableInlineUnwinding else ''
+    addr2line = subprocess.run(f"{crossCompile}addr2line -fsa{inlineOption} -e {elf} {pc:x}", shell=True, stdout=subprocess.PIPE)
     addr2line.check_returncode()
     decoded = decodeAddr2Line(addr2line.stdout.decode('utf-8'), demangle)
     return [decoded['sourcefile'], decoded['function'], decoded['demangled'], decoded['sourceline']]
