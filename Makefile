@@ -12,7 +12,7 @@ all: $(TARGETS)
 lynsyn: % : intrusiveProfiler.o pmu/%.o
 	$(CROSS_COMPILE)$(CC) $(FLAGS) $(INCLUDES) $(DEFINES) $^ -o $@ $(LINKING) -lusb-1.0
 
-lynsyn_v3: % : intrusiveProfiler.o pmu/%.o $(DEPDIR)/tulipp-tool-chain/power_measurement_utility/liblynsyn/lynsyn.o
+lynsyn_v3: % : intrusiveProfiler.o pmu/%.o $(DEPDIR)/lynsyn/liblynsyn/lynsyn.o
 	$(CROSS_COMPILE)$(CC) $(FLAGS) $(INCLUDES) $(DEFINES) $^ -o $@ $(LINKING) -lusb-1.0
 
 dummy rapl-sysfs: % : intrusiveProfiler.o pmu/%.o
@@ -37,15 +37,15 @@ $(DEPDIR)/sthem: $(DEPDIR)
 	[ -f "$@" ] && rm -Rf "$@" || true
 	git clone --depth 1 --branch develop https://github.com/tulipp-eu/sthem $@
 
-$(DEPDIR)/tulipp-tool-chain: $(DEPDIR)
+$(DEPDIR)/lynsyn: $(DEPDIR)
 	[ -f "$@" ] && rm -Rf "$@" || true
-	git clone --depth 1 --branch lynsyn_v3 https://github.com/tulipp-eu/tulipp-tool-chain $@
+	git clone --depth 1 https://github.com/EECS-NTNU/lynsyn $@
 
 pmu/lynsyn.o : %.o : %.c $(DEPDIR)/sthem
 	$(CROSS_COMPILE)$(CC) $(FLAGS) $(INCLUDES) -I$(DEPDIR)/sthem/power_measurement_utility/mcu/common -I/usr/include/libusb-1.0/ $(DEFINES) -c $< -o $@
 
-pmu/lynsyn_v3.o : %.o : %.c $(DEPDIR)/tulipp-tool-chain
-	$(CROSS_COMPILE)$(CC) $(FLAGS) $(INCLUDES) -I$(DEPDIR)/tulipp-tool-chain/power_measurement_utility/mcu/common  -I$(DEPDIR)/tulipp-tool-chain/power_measurement_utility/liblynsyn $(DEFINES) -c $< -o $@
+pmu/lynsyn_v3.o : %.o : %.c $(DEPDIR)/lynsyn
+	$(CROSS_COMPILE)$(CC) $(FLAGS) $(INCLUDES) -I$(DEPDIR)/lynsyn/mcu/common  -I$(DEPDIR)/lynsyn/liblynsyn $(DEFINES) -c $< -o $@
 
-$(DEPDIR)/tulipp-tool-chain/power_measurement_utility/liblynsyn/lynsyn.o : %.o : $(DEPDIR)/tulipp-tool-chain %.c
-	$(CROSS_COMPILE)$(CC) $(FLAGS) $(INCLUDES) -I$(DEPDIR)/tulipp-tool-chain/power_measurement_utility/mcu/common -I/usr/include/libusb-1.0/ $(DEFINES) -c $(filter %.c,$^) -o $@
+$(DEPDIR)/lynsyn/liblynsyn/lynsyn.o : %.o : $(DEPDIR)/lynsyn %.c
+	$(CROSS_COMPILE)$(CC) $(FLAGS) $(INCLUDES) -I$(DEPDIR)/lynsyn/mcu/common -I/usr/include/libusb-1.0/ $(DEFINES) -c $(filter %.c,$^) -o $@
