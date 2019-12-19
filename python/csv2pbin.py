@@ -60,6 +60,10 @@ if (args.kallsyms) and (not os.path.isfile(args.kallsyms)):
     parser.print_help()
     sys.exit(1)
 
+if (args.power_sensor is not False and args.power_sensor <= 0):
+    print("ERROR: invalid power sensor (>=1)")
+    sys.exit(1)
+
 if args.disable_cache:
     profileLib.disableCache = True
 if args.disable_unwind_inline:
@@ -115,6 +119,7 @@ prevTime = None
 lastTime = time.time()
 updateInterval = max(1, int(sampleCount / 200))
 wallTime = 0.0
+startTime = None
 
 timeColumn = False
 
@@ -173,6 +178,7 @@ for sample in csvProfile:
 
     if prevTime is None:
         prevTime = wallTime
+        startTime = wallTime
 
     if args.power_sensor is not False:
         if usePower:
@@ -186,7 +192,7 @@ for sample in csvProfile:
         processedSample.append([cpu, ((wallTime - prevTime) / len(useCpus)), sampleParser.parseFromPC(pc)])
 
     prevTime = wallTime
-    profile['profile'].append([power, wallTime, processedSample])
+    profile['profile'].append([power, wallTime - startTime, processedSample])
 
 del csvProfile
 del csvFile
