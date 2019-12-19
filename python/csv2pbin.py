@@ -197,7 +197,7 @@ for sample in csvProfile:
 del csvProfile
 del csvFile
 
-profile['samplingTime'] = wallTime - profile['profile'][0][1]
+profile['samplingTime'] = wallTime - startTime
 profile['binaries'] = sampleParser.getBinaryMap()
 profile['functions'] = sampleParser.getFunctionMap()
 profile['files'] = sampleParser.getFileMap()
