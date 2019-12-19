@@ -1,4 +1,4 @@
-# Intrusive ELF Profiler
+# PPerf - Intrusive ELF Profiler
 
 ```text
 sampler [options] -- <command> [arguments]
@@ -11,12 +11,22 @@ Options:
   -h, --help                shows help
 ```
 
-* profiles contains Wall Time, PMU Data, threads for every sample and TID, PC and CPU Time for every thread
-* all profiles contain execution time (wall), time spent in profiler (latency), number of samples and target VMMap
+* profiling any ELF file on Linux, without any instrumentation or required
+  privileges
+* offline analyzing, aggregating, comparing and visualizing of created profiles
+* sampling of internal or external PMU data (e.g. energy profiling with external
+  equipment or rapl)
+* profiles contains Wall Time, PMU Data, threads for every sample and TID, PC
+  and CPU Time for every thread
+* all profiles contain execution time (wall), time spent in profiler (latency,
+  estimation), number of samples and target VMMap
 * output file is optional, if not specified no IO is generated
 * frequency is a target, actual reached frequency is displayed in verbose output
-* threads are fully supported, **though fork, vfork and vclone is not supported**!
-* execl, execlp, execle, execv, execvp and execvpe are replacing the current process with new VMMaps and are therefore not supported!
+* threads are fully supported, **though fork, vfork and vclone is not
+  supported**!
+* execl, execlp, execle, execv, execvp and execvpe are replacing the current
+  process with new VMMaps and are therefore not supported!
+  
 
 ## Binary Profile Description
 

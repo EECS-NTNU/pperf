@@ -1,7 +1,7 @@
 CC = gcc
 FLAGS = -O3
 
-TARGETS := dummy lynsyn lynsyn_v3 rapl-sysfs
+TARGETS := pperf lynsyn lynsyn_v3 rapl-sysfs
 
 DEPDIR := github
 
@@ -9,13 +9,16 @@ LINKING := -lrt
 
 all: $(TARGETS)
 
-lynsyn: % : intrusiveProfiler.o pmu/%.o
+lynsyn: % : pperf.o pmu/%.o
 	$(CROSS_COMPILE)$(CC) $(FLAGS) $(INCLUDES) $(DEFINES) $^ -o $@ $(LINKING) -lusb-1.0
 
-lynsyn_v3: % : intrusiveProfiler.o pmu/%.o $(DEPDIR)/lynsyn/liblynsyn/lynsyn.o
+lynsyn_v3: % : pperf.o pmu/%.o $(DEPDIR)/lynsyn/liblynsyn/lynsyn.o
 	$(CROSS_COMPILE)$(CC) $(FLAGS) $(INCLUDES) $(DEFINES) $^ -o $@ $(LINKING) -lusb-1.0
 
-dummy rapl-sysfs: % : intrusiveProfiler.o pmu/%.o
+pperf: % : %.o pmu/dummy.o
+	$(CROSS_COMPILE)$(CC) $(FLAGS) $(INCLUDES) $(DEFINES) $^ -o $@ $(LINKING)
+
+rapl-sysfs: % : pperf.o pmu/%.o
 	$(CROSS_COMPILE)$(CC) $(FLAGS) $(INCLUDES) $(DEFINES) $^ -o $@ $(LINKING)
 
 pmu/%.o : pmu/%.c

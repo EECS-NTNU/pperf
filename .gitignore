@@ -1,7 +1,7 @@
 github
 lynsyn
 lynsyn_v3
-dummy
+pperf
 rapl-sysfs
 *.o
 pmu/*.o
