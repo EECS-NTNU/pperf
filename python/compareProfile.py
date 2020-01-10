@@ -4,8 +4,6 @@ import sys
 import argparse
 import bz2
 import pickle
-import plotly
-import plotly.graph_objs as go
 import numpy
 import textwrap
 import tabulate
@@ -14,10 +12,7 @@ import math
 import operator
 import collections
 import profileLib
-import plotlyExport
 import statistics
-
-plotly.io.templates.default = 'plotly_white'
 
 
 def error(baseline, value, totalBaseline, totalValue, weight):
@@ -407,6 +402,11 @@ if aggregateFunction is not False:
     headers = numpy.array([header], dtype=object)
 
 if (args.plot or args.export):
+    import plotly
+    import plotly.graph_objs as go
+    import plotlyExport
+    plotly.io.templates.default = 'plotly_white'
+
     fig = {'data': []}
     if (args.cut_off_symbols > 0):
         pAggregationLabel = [textwrap.fill(x, args.cut_off_symbols).replace('\n', '<br />') for x in rows[:, 0]]
@@ -513,6 +513,8 @@ if (args.table):
 
 if (not args.quiet):
     headers = numpy.append([header], headers)
-
-    rows[:, 0] = [textwrap.fill(x, 64) for x in rows[:, 0]]
+    if (args.cut_off_symbols > 0):
+        rows[:, 0] = [textwrap.fill(x, args.cut_off_symbols) for x in rows[:, 0]]
+    elif (args.cut_off_symbols < 0):
+        rows[:, 0] = [f"{x[0:abs(args.cut_off_symbols)]}..." if len(x) > abs(args.cut_off_symbols) else x for x in rows[:, 0]]
     print(tabulate.tabulate(rows, headers=headers, floatfmt=".16f"))

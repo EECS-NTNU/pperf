@@ -4,16 +4,12 @@ import sys
 import argparse
 import bz2
 import pickle
-import plotly
-import plotly.graph_objects as go
 import numpy
 import textwrap
 import tabulate
 import profileLib
 import gc
-import plotlyExport
 
-plotly.io.templates.default = 'plotly_white'
 
 aggregateKeyNames = ["pc", "binary", "file", "procedure_mangled", "procedure", "line"]
 
@@ -22,7 +18,7 @@ parser.add_argument("profiles", help="postprocessed profiles from intrvelf", nar
 parser.add_argument("-a", "--aggregate-keys", help=f"aggregate after this list (%(default)s) e.g.: {','.join(aggregateKeyNames)}", default="binary,procedure")
 parser.add_argument("--use-time", action="store_true", help="sort and plot based on time (default)", default=False)
 parser.add_argument("--use-energy", action="store_true", help="sort and plot based on energy", default=False)
-parser.add_argument("-l", "--limit", help="limit output to %% of energy", type=float, default=0)
+parser.add_argument("-l", "--limit", help="limit output to %% of time", type=float, default=0)
 parser.add_argument("-t", "--table", help="output csv table")
 parser.add_argument("-p", "--plot", help="plotly html file")
 parser.add_argument("-o", "--output", help="output aggregated profile")
@@ -232,12 +228,12 @@ totalSamples = numpy.sum(samples)
 
 if args.limit is not 0:
     accumulate = 0.0
-    accumulateLimit = totalEnergy * args.limit
-    for index, value in enumerate(energies[::-1]):
+    accumulateLimit = totalTime * args.limit
+    for index, value in enumerate(times[::-1]):
         accumulate += value
         if (accumulate >= accumulateLimit):
             cutOff = len(energies) - (index + 1)
-            print(f"Limit output to {index+1}/{len(energies)} values...")
+            print(f"Limit output to {index+1}/{len(times)} values...")
             times = times[cutOff:]
             execs = execs[cutOff:]
             energies = energies[cutOff:]
@@ -252,6 +248,11 @@ labels = [f"{x:.4f} s, {s:.2f} W" + (f", {x * 100 / totalTime if totalTime > 0 e
 # aggregationLabel = [ re.sub(r'\(.*\)$', '', x) for x in aggregationLabel ]
 
 if (args.plot) or (args.export):
+    import plotly
+    import plotly.graph_objects as go
+    import plotlyExport
+    plotly.io.templates.default = 'plotly_white'
+
     if (args.cut_off_symbols > 0):
         pAggregationLabel = [textwrap.fill(x, args.cut_off_symbols).replace('\n', '<br />') for x in aggregationLabel]
         leftMargin = abs(args.cut_off_symbols)
@@ -348,4 +349,10 @@ if (args.output):
 
 if (not args.quiet):
     relativeSamples = [f"{x / totalSamples:.3f}" for x in samples]
-    print(tabulate.tabulate(zip(aggregationLabel, times, execs, powers, energies, samples, relativeSamples), headers=['Function', 'Time [s]', 'Executions', 'Power [W]', 'Energy [J]', 'Samples', '%']))
+    if (args.cut_off_symbols > 0):
+        pAggregationLabel = [textwrap.fill(x, args.cut_off_symbols) for x in aggregationLabel]
+    elif (args.cut_off_symbols < 0):
+        pAggregationLabel = [f"{x[0:abs(args.cut_off_symbols)]}..." if len(x) > abs(args.cut_off_symbols) else x for x in aggregationLabel]
+    else:
+        pAggregationLabel = aggregationLabel
+    print(tabulate.tabulate(zip(pAggregationLabel, times, execs, powers, energies, samples, relativeSamples), headers=['Function', 'Time [s]', 'Executions', 'Power [W]', 'Energy [J]', 'Samples', '%']))
