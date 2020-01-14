@@ -307,7 +307,8 @@ if (args.plot) or (args.export):
             go.Figure(fig).update_layout(title=None, margin_t=0, margin_r=0),
             args.width if args.width else None,
             args.height if args.height else None,
-            args.export
+            args.export,
+            not args.quiet
         )
         print(f"Exported to {args.export}")
 

@@ -368,6 +368,7 @@ if errorFunction:
         header += f"{chosenErrorFunction[1]}"
 header = header.strip()
 
+
 if errorFunction is not False and aggregateFunction is False:
     headers = numpy.array([chart['name'] for chart in errorCharts])
     rows = numpy.array(baselineChart['labels']).reshape(-1, 1)
@@ -378,8 +379,11 @@ if errorFunction is not False and aggregateFunction is False:
         weights = numpy.append(weights, numpy.array(chart['weights']).reshape(-1, 1), axis=1)
         barLabels = numpy.append(barLabels, numpy.array(chart['weights']).reshape(-1, 1), axis=1)  # weights
         # barLabels = numpy.append(barLabels, chartValues[:, 4].reshape(-1, 1), axis=1) # execTimes
-
-    asort = rows[:, 1].argsort()
+    try:
+        # Try to sort after numeric values
+        asort = numpy.array(rows[:, 1], dtype=float).argsort()
+    except Exception:
+        asort = rows[:, 1].argsort()
     rows = rows[asort]
     weights = weights[asort]
     barLabels = barLabels[asort]
@@ -400,6 +404,8 @@ if aggregateFunction is not False:
         ))
     rows = numpy.append(rows, errors.reshape(-1, 1), axis=1)
     headers = numpy.array([header], dtype=object)
+
+
 
 if (args.plot or args.export):
     import plotly
@@ -467,7 +473,8 @@ if (args.plot or args.export):
             go.Figure(fig).update_layout(title=None, margin_t=0, margin_r=0),
             args.width if args.width else None,
             args.height if args.height else None,
-            args.export
+            args.export,
+            not args.quiet
         )
         print(f"Exported to {args.export}")
 
