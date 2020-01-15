@@ -53,12 +53,21 @@ for line in perf.stdout:
 
     sample = line.split(": ")
     sampleStat = sample[0].split(" ")
-    sampleCpu = int(sampleStat[0])
-    sampleTime = int(sampleStat[1])
+    if len(sampleStat) < 3:
+        continue
+
+    if len(sampleStat) == 3:
+        sampleCpu = 0
+        sampleTime = int(sampleStat[0], 0)
+        sampleOffset = int(sampleStat[1], 0)
+    else:
+        sampleCpu = int(sampleStat[0], 0)
+        sampleTime = int(sampleStat[1], 0)
+        sampleOffset = int(sampleStat[2], 0)
+
     if (sampleTime is 0):
         continue
 
-    sampleOffset = int(sampleStat[2], 0)
     sampleSource = None
     sampleParentId = None
     sampleThreadId = None
@@ -109,6 +118,9 @@ for line in perf.stdout:
 
 perf.wait()
 
+if len(seenCpus) == 0:
+    raise Exception('Nothing was extracted')
+
 if perf.returncode is not 0:
     print("ERROR: perf report failed!")
     print(perf.stderr.read().decode('utf-8'))
@@ -123,6 +135,7 @@ csvFile.write('time')
 for cpu in seenCpus:
     csvFile.write(f';pc{cpu}')
 csvFile.write('\n')
+
 
 pcVector = [0] * (max(seenCpus) + 1)
 for sample in samples:

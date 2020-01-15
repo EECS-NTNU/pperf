@@ -405,8 +405,6 @@ if aggregateFunction is not False:
     rows = numpy.append(rows, errors.reshape(-1, 1), axis=1)
     headers = numpy.array([header], dtype=object)
 
-
-
 if (args.plot or args.export):
     import plotly
     import plotly.graph_objs as go
