@@ -5,6 +5,7 @@ import os
 import sys
 import bz2
 import subprocess
+import chardet
 
 parser = argparse.ArgumentParser(description="Parse perf data to csv/vmmap")
 parser.add_argument("perfdata", help="perf-data from perf record")
@@ -12,6 +13,7 @@ parser.add_argument("-o", "--output", help="output csv")
 parser.add_argument("-v", "--vmmap", help="output vmmap")
 parser.add_argument("-t", "--target", help="set target executeable")
 parser.add_argument("-p", "--perf", help="use this perf executable")
+parser.add_argument("-e", "--encoding", help="use this perf executable")
 
 args = parser.parse_args()
 
@@ -45,9 +47,42 @@ seenCpus = []
 
 targetParentId = None
 
-perf = subprocess.Popen([args.perf if args.perf else 'perf', 'report', '--header', '-D', '-i', args.perfdata], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-for line in perf.stdout:
-    line = line.decode('utf-8').strip().rstrip('\n')
+
+print("Raw dump perf data...")
+perf = subprocess.run([args.perf if args.perf else 'perf', 'report', '--header', '-D', '-i', args.perfdata], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+perf.check_returncode()
+encoding = args.encoding if args.encoding else None
+
+if (len(perf.stdout) == 0):
+    raise Exception("No perf output retrieved")
+
+if encoding is not None:
+    perfOut = perf.stdout.decode(encoding)
+else:
+    print("Try to detect encoding... ", end='')
+    encoding = chardet.detect(perf.stdout)['encoding']
+    if encoding is not None:
+        print(encoding)
+        perfOut = perf.stdout.decode(encoding)
+    else:
+        print('failed')
+        print("Try utf-8 encoding... ", end='')
+        try:
+            perfOut = perf.stdout.decode('utf-8')
+            print('success')
+        except Exception:
+            print('failed')
+            print("Try latin-1 encoding... ", end='')
+            try:
+                perfOut = perf.stdout.decode('latin-1')
+                print('success')
+            except Exception:
+                print('failed')
+                print("Was not able to decode perf raw output!")
+                exit(1)
+
+for line in perfOut.split('\n'):
+    line = line.strip()
     if 'PERF_RECORD_SAMPLE' not in line and 'PERF_RECORD_MMAP' not in line:
         continue
 
@@ -116,16 +151,6 @@ for line in perf.stdout:
 
     # print(f"Type {sampleType}, Source {sampleSource}, Time {sampleTime}, ParentId {sampleParentId}, ThreadId {sampleThreadId}, PC {samplePc}, BaseAddr {sampleMmapBaseAddr}, Length {sampleMmapLength}, Target {sampleMmapTarget}")
 
-perf.wait()
-
-if len(seenCpus) == 0:
-    raise Exception('Nothing was extracted')
-
-if perf.returncode is not 0:
-    print("ERROR: perf report failed!")
-    print(perf.stderr.read().decode('utf-8'))
-    sys.exit(1)
-
 if args.output.endswith(".bz2"):
     csvFile = bz2.open(args.output, "wt")
 else:
@@ -145,11 +170,14 @@ for sample in samples:
         csvFile.write(f';{pcVector[cpu]}')
     csvFile.write('\n')
 
+print(f"{len(samples)} samples extracted")
 
 if args.vmmap and targetParentId is None:
     print("WARNING: no executable found that was memory mapped")
 
 if (args.vmmap):
     vmmapFile.close()
+    print(f'VMMap written to {args.vmmap}')
 
 csvFile.close()
+print(f'CSV written to {args.output}')
