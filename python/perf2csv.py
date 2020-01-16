@@ -7,6 +7,21 @@ import bz2
 import subprocess
 import chardet
 
+
+def guessEncoding(data):
+    enc = chardet.detect(data)['encoding']
+    if (enc is None):
+        for enc in ['utf-8', 'latin-1']:
+            try:
+                data.decode(enc)
+                return enc
+            except Exception:
+                continue
+    else:
+        return enc
+    return None
+
+
 parser = argparse.ArgumentParser(description="Parse perf data to csv/vmmap")
 parser.add_argument("perfdata", help="perf-data from perf record")
 parser.add_argument("-o", "--output", help="output csv")
@@ -48,41 +63,30 @@ seenCpus = []
 targetParentId = None
 
 
-print("Raw dump perf data...")
-perf = subprocess.run([args.perf if args.perf else 'perf', 'report', '--header', '-D', '-i', args.perfdata], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-perf.check_returncode()
+print("Processing perf raw data...")
+perf = subprocess.Popen([args.perf if args.perf else 'perf', 'report', '--header', '-D', '-i', args.perfdata], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 encoding = args.encoding if args.encoding else None
 
-if (len(perf.stdout) == 0):
-    raise Exception("No perf output retrieved")
+for line in perf.stdout:
+    parsed = False
+    encodingPass = 0
 
-if encoding is not None:
-    perfOut = perf.stdout.decode(encoding)
-else:
-    print("Try to detect encoding... ", end='')
-    encoding = chardet.detect(perf.stdout)['encoding']
-    if encoding is not None:
-        print(encoding)
-        perfOut = perf.stdout.decode(encoding)
-    else:
-        print('failed')
-        print("Try utf-8 encoding... ", end='')
+    while not parsed:
+        if encoding is None:
+            encoding = guessEncoding(line)
+            if (encoding is None):
+                raise Exception("Could not detect encoding or perf raw output")
+            print(f"Encoding set to {encoding}")
+
         try:
-            perfOut = perf.stdout.decode('utf-8')
-            print('success')
+            line = line.decode(encoding).strip().rstrip('\n').rstrip('\r\n')
+            parsed = True
         except Exception:
-            print('failed')
-            print("Try latin-1 encoding... ", end='')
-            try:
-                perfOut = perf.stdout.decode('latin-1')
-                print('success')
-            except Exception:
-                print('failed')
-                print("Was not able to decode perf raw output!")
-                exit(1)
+            if encodingPass >= 1:
+                raise Exception(f"Could not decode perf raw output with encoding {encoding}")
+            encoding = None
+            encodingPass += 1
 
-for line in perfOut.split('\n'):
-    line = line.strip()
     if 'PERF_RECORD_SAMPLE' not in line and 'PERF_RECORD_MMAP' not in line:
         continue
 
