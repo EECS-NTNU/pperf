@@ -150,7 +150,7 @@ cmpEnergy = 2
 cmpRelSamples = 3
 cmpExecs = 4
 
-compareOffset = cmpEnergy
+cmpOffset = cmpEnergy
 if args.use_time:
     header = "Time "
     cmpOffset = cmpTime
@@ -494,7 +494,7 @@ if (args.table or not args.quiet):
             rows = numpy.concatenate(([total], rows), axis=0)
         if args.coverage:
             coverage = ['_coverage']
-            coverage.extend([chart['totals'][0 + compareOffset] / chart['fullTotals'][0 + compareOffset] if chart['fullTotals'][0 + compareOffset] != 0 else 0 for chart in errorCharts])
+            coverage.extend([chart['totals'][cmpOffset] / chart['fullTotals'][cmpOffset] if chart['fullTotals'][cmpOffset] != 0 else 0 for chart in errorCharts])
             weights = numpy.concatenate(([[0] * (len(coverage) - 1)], weights), axis=0)
             rows = numpy.concatenate(([coverage], rows), axis=0)
         if args.weights:
