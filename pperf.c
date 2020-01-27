@@ -373,7 +373,7 @@ int main(int const argc, char **argv) {
             aLen = strlen(optarg);
             pmuArg = malloc((aLen + 1) * sizeof(char));
             memset(pmuArg, '\0', aLen + 1);
-            strncpy(pmuArg, optarg, aLen);
+            memcpy(pmuArg, optarg, aLen);
             break;
         case 'x':
             fifo = strtol(optarg, &endptr, 10);
@@ -624,6 +624,7 @@ int main(int const argc, char **argv) {
     pmuRead(samplePMUData);
 
     uint64_t sampleTime = 0;
+    uint64_t cputime;
    
     if (startTimer(&timer) != 0) {
         fprintf(stderr, "ERROR: could not start sampling timer\n");
@@ -637,6 +638,7 @@ int main(int const argc, char **argv) {
     } else {
         scheduleInterruptNow(&timer);
     }
+
 
     long r;
     do {
@@ -758,10 +760,11 @@ int main(int const argc, char **argv) {
 #else
             tasks.list[i].pc = regs.rip;
 #endif
-            if (getCPUTimeFromSchedstat(tasks.schedstats[i], &tasks.list[i].cputime)) {
+            if (getCPUTimeFromSchedstat(tasks.schedstats[i], &cputime)) {
                 fprintf(stderr, "ERROR: could not read cputime of tid %d\n", tasks.list[i].tid);
                 ret = 1; goto exitWithTarget;
             }
+            tasks.list[i].cputime = cputime
             debug_printf("[%d] pc: 0x%lx, cputime: %lu\n", tasks.list[i].tid, tasks.list[i].pc, tasks.list[i].cputime);
             i++;
         }

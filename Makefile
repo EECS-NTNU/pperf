@@ -1,7 +1,7 @@
 CC = gcc
 FLAGS = -O3
 
-TARGETS := pperf lynsyn lynsyn_v3 rapl-sysfs
+TARGETS := pperf pperf-lynsyn pperf-rapl-sysfs
 
 DEPDIR := github
 
@@ -9,17 +9,17 @@ LINKING := -lrt
 
 all: $(TARGETS)
 
-lynsyn: % : pperf.o pmu/%.o
-	$(CROSS_COMPILE)$(CC) $(FLAGS) $(INCLUDES) $(DEFINES) $^ -o $@ $(LINKING) -lusb-1.0
-
-lynsyn_v3: % : pperf.o pmu/%.o $(DEPDIR)/lynsyn/liblynsyn/lynsyn.o
-	$(CROSS_COMPILE)$(CC) $(FLAGS) $(INCLUDES) $(DEFINES) $^ -o $@ $(LINKING) -lusb-1.0
-
 pperf: % : %.o pmu/dummy.o
 	$(CROSS_COMPILE)$(CC) $(FLAGS) $(INCLUDES) $(DEFINES) $^ -o $@ $(LINKING)
 
-rapl-sysfs: % : pperf.o pmu/%.o
+pperf-rapl-sysfs: % : pperf.o pmu/rapl-sysfs.o
 	$(CROSS_COMPILE)$(CC) $(FLAGS) $(INCLUDES) $(DEFINES) $^ -o $@ $(LINKING)
+
+pperf-lynsyn: pperf-% : pperf.o pmu/%.o $(DEPDIR)/lynsyn/liblynsyn/lynsyn.o
+	$(CROSS_COMPILE)$(CC) $(FLAGS) $(INCLUDES) $(DEFINES) $^ -o $@ $(LINKING) -lusb-1.0
+
+pperf-lynsyn-old: pperf-% : pperf.o pmu/%.o
+	$(CROSS_COMPILE)$(CC) $(FLAGS) $(INCLUDES) $(DEFINES) $^ -o $@ $(LINKING) -lusb-1.0
 
 pmu/%.o : pmu/%.c
 	$(CROSS_COMPILE)$(CC) $(FLAGS) $(INCLUDES) $(DEFINES) -c $< -o $@
@@ -29,26 +29,25 @@ pmu/%.o : pmu/%.c
 
 clean:
 	rm -Rf $(DEPDIR)
-	rm -Rf $(DEPDIR)/sthem
-	rm -Rf $(DEPDIR)/tulipp-tool-chain
-	rm -Rf pmu/*.o *.o $(TARGETS)
+	rm -Rf pmu/*.o *.o $(TARGETS) pperf-lynsyn-old
 
 $(DEPDIR):
 	mkdir $(DEPDIR)
 
 $(DEPDIR)/sthem: $(DEPDIR)
+	echo "deprecated" 1>&2; exit 1
 	[ -f "$@" ] && rm -Rf "$@" || true
 	git clone --depth 1 --branch develop https://github.com/tulipp-eu/sthem $@
 
 $(DEPDIR)/lynsyn: $(DEPDIR)
 	[ -f "$@" ] && rm -Rf "$@" || true
-	git clone --depth 1 https://github.com/EECS-NTNU/lynsyn $@
+	git clone --depth 1 https://github.com/EECS-NTNU/lynsyn-host-software $@
 
-pmu/lynsyn.o : %.o : %.c $(DEPDIR)/sthem
+pmu/lynsyn-old.o : %.o : %.c $(DEPDIR)/sthem
 	$(CROSS_COMPILE)$(CC) $(FLAGS) $(INCLUDES) -I$(DEPDIR)/sthem/power_measurement_utility/mcu/common -I/usr/include/libusb-1.0/ $(DEFINES) -c $< -o $@
 
-pmu/lynsyn_v3.o : %.o : %.c $(DEPDIR)/lynsyn
-	$(CROSS_COMPILE)$(CC) $(FLAGS) $(INCLUDES) -I$(DEPDIR)/lynsyn/mcu/common  -I$(DEPDIR)/lynsyn/liblynsyn $(DEFINES) -c $< -o $@
+pmu/lynsyn.o : %.o : %.c $(DEPDIR)/lynsyn
+	$(CROSS_COMPILE)$(CC) $(FLAGS) $(INCLUDES) -I$(DEPDIR)/lynsyn/common  -I$(DEPDIR)/lynsyn/liblynsyn $(DEFINES) -c $< -o $@
 
 $(DEPDIR)/lynsyn/liblynsyn/lynsyn.o : %.o : $(DEPDIR)/lynsyn %.c
-	$(CROSS_COMPILE)$(CC) $(FLAGS) $(INCLUDES) -I$(DEPDIR)/lynsyn/mcu/common -I/usr/include/libusb-1.0/ $(DEFINES) -c $(filter %.c,$^) -o $@
+	$(CROSS_COMPILE)$(CC) $(FLAGS) $(INCLUDES) -I$(DEPDIR)/lynsyn/common -I/usr/include/libusb-1.0/ $(DEFINES) -c $(filter %.c,$^) -o $@
