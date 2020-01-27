@@ -70,8 +70,7 @@ process. Those binary profiles must be postprocessed to create a pbin file which
 then can be plotted, aggregated and compared with the respective scripts. All
 scripts have a help page for further usage.
 
-sthem2pbin script converts a csv file exported by the sthem analysis tool to a
-pbin file. Cpu time is not available, resulting in skewed results for parallel
-benchmarks. Use only if you know how to interpret the data!
+Profiles from the Lynsyn viewer can be exported as CSV and converted and
+postprocessed with the csv2pbin.py script.
 
 All scripts support bzip2 compression for input and output of profiles.
