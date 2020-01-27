@@ -16,10 +16,11 @@ Options:
 * offline analyzing, aggregating, comparing and visualizing of created profiles
 * sampling of internal or external PMU data (e.g. energy profiling with external
   equipment or rapl)
-* profiles contains Wall Time, PMU Data, threads for every sample and TID, PC
-  and CPU Time for every thread
+* every sample contains the wall time, PMU data and the TID, PC and CPU time for
+  every thread of the application
+* uses ptrace group-stops to synchronously sample all threads in a application
 * all profiles contain execution time (wall), time spent in profiler (latency,
-  estimation), number of samples and target VMMap
+  estimation), number of samples and the target virtual memory map
 * output file is optional, if not specified no IO is generated
 * frequency is a target, actual reached frequency is displayed in verbose output
 * threads are fully supported, **though fork, vfork and vclone is not
