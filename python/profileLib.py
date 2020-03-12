@@ -6,6 +6,7 @@ import os
 import subprocess
 import hashlib
 import pickle
+import pathlib
 from filelock import FileLock
 import tempfile
 
@@ -125,7 +126,7 @@ def addr2line(elf, pc, demangle=True):
 
 # Work in Progress
 class elfCache:
-    cacheFolder = ".cache"
+    cacheFolder = str(pathlib.Path.home()) + "/.cache/pperf/"
 
     caches = {}
 

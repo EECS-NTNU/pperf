@@ -11,7 +11,7 @@ import chardet
 def guessEncoding(data):
     enc = chardet.detect(data)['encoding']
     if (enc is None):
-        for enc in ['utf-8', 'latin-1']:
+        for enc in ['utf-8', 'latin-1', 'iso-8859']:
             try:
                 data.decode(enc)
                 return enc
