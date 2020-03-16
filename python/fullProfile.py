@@ -141,7 +141,7 @@ if args.csv_gantt_threads:
         csvFile = bz2.open(args.csv_gantt_threads, "wt")
     else:
         csvFile = open(args.csv_gantt_threads, "w")
-    csvFile.write('Thread\ttime\t_base\t_label\n')
+    csvFile.write('_thread\ttime\t_base\t_label\n')
     for s, time in enumerate(times):
         for t, _ in enumerate(threadDisplay):
             if (t in ganttThreadMap) and (ganttThreadMap[t]['label'] != threadDisplay[t][s]):
