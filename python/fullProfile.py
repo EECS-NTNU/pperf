@@ -10,7 +10,6 @@ import plotly.graph_objs as go
 import numpy
 import profileLib
 import gc
-import plotlyExport
 
 plotly.io.templates.default = 'plotly_white'
 
@@ -18,22 +17,20 @@ aggregateKeyNames = ["pc", "binary", "file", "procedure_mangled", "procedure", "
 
 parser = argparse.ArgumentParser(description="Visualize profiles from intrvelf sampler.")
 parser.add_argument("profile", help="postprocessed profile from intrvelf")
-parser.add_argument("-s", "--start", type=float, help="plot start time (seconds)")
-parser.add_argument("-e", "--end", type=float, help="plot end time (seconds)")
+parser.add_argument("-s", "--start", type=float, help="start time (seconds)")
+parser.add_argument("-e", "--end", type=float, help="end time (seconds)")
 parser.add_argument("-i", "--interpolate", type=int, help="interpolate samples")
 parser.add_argument("-a", "--aggregate-keys", help=f"aggregate after this list (%(default)s) e.g.: {','.join(aggregateKeyNames)}", default="binary,procedure")
-parser.add_argument("-p", "--plot", help="plot output html file")
-parser.add_argument("-q", "--quiet", action="store_true", help="do not automatically open plot")
+parser.add_argument("-ls", "--lstrip", default=None, help=f"strip labels on the left (default target binary is stripped)")
+parser.add_argument("-p", "--plot", default=False, action="store_true", help="plot standard html file")
 parser.add_argument("--csv-power", help="save time, power csv to file")
-parser.add_argument("--csv-threads", help="save thread csv")
-parser.add_argument("--csv-gantt-threads", help="save gantt like thread focus csv")
-parser.add_argument("--csv-gantt-labels", help="save gantt like per label focus csv (directory needed!)")
-
-parser.add_argument("--export", help="export plot (pdf, svg, png,...)")
-parser.add_argument("--width", help="export width", type=int, default=1500)
-parser.add_argument("--height", help="export height", type=int)
+parser.add_argument("--csv-threads", help="save thread csv containing  each sample with threads")
+parser.add_argument("--csv-gantt-threads", help="save gannt like thread csv")
 
 args = parser.parse_args()
+
+if (not args.plot and not args.csv_power and not args.csv_threads and not args.csv_gantt_threads):
+    args.plot = True
 
 if (not args.profile) or (not os.path.isfile(args.profile)):
     print("ERROR: profile not found")
@@ -133,7 +130,7 @@ for index, sample in enumerate(samples):
             threadDisplay.append(list.copy(threadNone))
 
         threads[threadIndex][index] = threadIndex + 1
-        threadDisplay[threadIndex][index] = sampleFormatter.sanitizeOutput(sampleFormatter.formatData(threadSample[2], displayKeys=aggregateKeys), lStringStrip=profile['target'])
+        threadDisplay[threadIndex][index] = sampleFormatter.sanitizeOutput(sampleFormatter.formatData(threadSample[2], displayKeys=aggregateKeys), lStringStrip=profile['target'] if args.lstrip is None else False if len(args.lstrip) == 0 else args.strip)
 
 if args.csv_gantt_threads:
     ganttThreadMap = {}
@@ -141,7 +138,7 @@ if args.csv_gantt_threads:
         csvFile = bz2.open(args.csv_gantt_threads, "wt")
     else:
         csvFile = open(args.csv_gantt_threads, "w")
-    csvFile.write('_thread\ttime\t_base\t_label\n')
+    csvFile.write('_thread\tTime\t_offset\t_label\n')
     for s, time in enumerate(times):
         for t, _ in enumerate(threadDisplay):
             if (t in ganttThreadMap) and (ganttThreadMap[t]['label'] != threadDisplay[t][s]):
@@ -229,18 +226,4 @@ if (args.plot):
     del threads
     del threadDisplay
     gc.collect()
-
-    sys.stdout.flush()
-    if (args.plot):
-        plotly.offline.plot(fig, filename=args.plot, auto_open=not args.quiet)
-        print(f"Plot saved to {args.plot}")
-
-        if (args.export):
-            plotlyExport.exportInternal(
-                go.Figure(fig).update_layout(title=None, margin_t=0, margin_r=0),
-                args.width if args.width else None,
-                args.height if args.height else None,
-                args.export,
-                not args.quiet
-            )
-            print(f"Exported to {args.export}")
+    fig.show()

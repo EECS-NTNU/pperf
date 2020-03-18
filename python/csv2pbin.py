@@ -50,11 +50,6 @@ if (not args.csv) or (not os.path.isfile(args.csv)):
     parser.print_help()
     sys.exit(1)
 
-if (not args.vmmap) or (not os.path.isfile(args.vmmap)):
-    print("ERROR: vmmap not found!")
-    parser.print_help()
-    sys.exit(1)
-
 if (args.kallsyms) and (not os.path.isfile(args.kallsyms)):
     print("ERROR: kallsyms not found!")
     parser.print_help()
@@ -99,13 +94,20 @@ csvFile.seek(0)
 
 print("finished!")
 
-print("Reading vm maps... ", end="")
-sys.stdout.flush()
-sampleParser.loadVMMap(args.vmmap)
-print("finished")
+if (args.vmmap):
+    print("Reading vm maps... ", end="")
+    sys.stdout.flush()
+    sampleParser.loadVMMap(args.vmmap)
+    print("finished")
 
-profile['name'] = args.name if args.name else sampleParser.binaries[0]['binary']
-profile['target'] = sampleParser.binaries[0]['binary']
+noBinaries = len(sampleParser.binaries) == 0
+
+if (noBinaries):
+    profile['name'] = args.name if args.name else '_unknown'
+    profile['target'] = '_unknown'
+else:
+    profile['name'] = args.name if args.name else sampleParser.binaries[0]['binary']
+    profile['target'] = sampleParser.binaries[0]['binary']
 
 if (args.kallsyms):
     sampleParser.loadKallsyms(args.kallsyms)
