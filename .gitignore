@@ -1,8 +1,7 @@
 github
-lynsyn
-lynsyn_v3
 pperf
-rapl-sysfs
+pperf-lynsyn
+pperf-rapl-sysfs
 *.o
 pmu/*.o
 python/__pycache__
