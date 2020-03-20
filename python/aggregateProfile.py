@@ -334,7 +334,7 @@ if (args.table):
         table = bz2.BZ2File.open(args.table, "w")
     else:
         table = open(args.table, "w")
-    table.write("function;time;power;energy;samples\n")
+    table.write("function;time;executions;power;energy;samples\n")
     for f, t, e, s, m, n in zip(aggregationLabel, times, execs, powers, energies, samples):
         table.write(f"{f};{t};{e};{s};{m};{n}\n")
     table.close()

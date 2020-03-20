@@ -191,7 +191,7 @@ for sample in csvProfile:
     processedSample = []
     for cpu in useCpus:
         pc = int(sample[pcColumns[cpu]])
-        processedSample.append([cpu, ((wallTime - prevTime) / len(useCpus)), sampleParser.parseFromPC(pc)])
+        processedSample.append([cpu, wallTime - prevTime, sampleParser.parseFromPC(pc)])
 
     prevTime = wallTime
     profile['profile'].append([power, wallTime - startTime, processedSample])
