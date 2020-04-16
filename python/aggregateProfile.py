@@ -69,6 +69,8 @@ aggregatedProfile = {
     'samplingTime': 0,
     'latencyTime': 0,
     'profile': {},
+    'energy': 0,
+    'power': 0,
     'volts': 0,
     'name': False,
     'target': False,
@@ -117,6 +119,8 @@ for fileProfile in args.profiles:
     aggregatedProfile['latencyTime'] += profile['latencyTime'] * meanFac
     aggregatedProfile['samplingTime'] += profile['samplingTime'] * meanFac
     aggregatedProfile['samples'] += profile['samples'] * meanFac
+    if ('energy' in profile):
+        aggregatedProfile['energy'] += profile['energy'] * meanFac
     avgSampleTime = profile['samplingTime'] / profile['samples']
     avgLatencyTime = profile['latencyTime'] / profile['samples']
 
@@ -201,6 +205,7 @@ if 'aggregated' not in aggregatedProfile or aggregatedProfile['aggregated'] is F
         energy = aggregatedProfile['profile'][key][profileLib.aggEnergy]
         aggregatedProfile['profile'][key][profileLib.aggPower] = energy / time if time != 0 else 0
 
+    aggregatedProfile['power'] = aggregatedProfile['energy'] / aggregatedProfile['samplingTime']
     aggregatedProfile['aggregated'] = True
 
 avgLatencyTime = aggregatedProfile['latencyTime'] / aggregatedProfile['samples']

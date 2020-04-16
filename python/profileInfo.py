@@ -39,6 +39,10 @@ for fileProfile in args.profiles:
         print(f"    Frequency: {profile['samples'] / profile['samplingTime']} Hz")
         print(f"    Latency:   {profile['latencyTime']} s")
         print(f"    Volts:     {profile['volts']}")
+        if ('energy' in profile):
+            print(f"    Energy:    {profile['energy']} J")
+        if ('power' in profile):
+            print(f"    Power:     {profile['power']} W")
         print(f"    Name:      {profile['name']}")
         print(f"    Target:    {profile['target']}")
         print(f"    Mean:      {profile['mean']}")
@@ -52,6 +56,10 @@ for fileProfile in args.profiles:
         print(f"    Time:      {profile['samplingTime']} s")
         print(f"    Frequency: {profile['samples'] / profile['samplingTime']} Hz")
         print(f"    Latency:   {profile['latencyTime']}s")
+        if ('energy' in profile):
+            print(f"    Energy:    {profile['energy']} J")
+        if ('power' in profile):
+            print(f"    Power:     {profile['power']} W")
         print(f"    Volts:     {profile['volts']}")
         print(f"    CPUs:      {profile['cpus']}")
         print(f"    Name:      {profile['name']}")

@@ -15,6 +15,8 @@ profile = {
     'samples': 0,
     'samplingTime': 0,
     'latencyTime': 0,
+    'energy': 0,
+    'power': 0,
     'volts': 1,
     'cpus': 1,
     'name': "",
@@ -34,7 +36,7 @@ parser.add_argument("-s", "--search-path", help="add search path", action="appen
 parser.add_argument("-o", "--output", help="output profile")
 parser.add_argument("-v", "--vmmap", help="vmmap from profiling run")
 parser.add_argument("-ks", "--kallsyms", help="parse with kernel symbol file")
-parser.add_argument("-c", "--cpus", help="list of active cpu cores", default="0-3")
+parser.add_argument("-c", "--cpus", help="list of active cpu cores", default=None)
 parser.add_argument("--disable-unwind-inline", action="store_true", help="do not unwind inlined functions (disables cache)")
 parser.add_argument("--disable-cache", action="store_true", help="do not create or use address caches")
 
@@ -69,8 +71,12 @@ if (not args.search_path):
     args.search_path = []
 args.search_path.append(os.getcwd())
 
-useCpus = list(set(profileLib.parseRange(args.cpus)))
-profile['cpus'] = len(useCpus)
+if args.cpus is not None:
+    useCpus = list(set(profileLib.parseRange(args.cpus)))
+    profile['cpus'] = len(useCpus)
+else:
+    useCpus = []
+    profile['cpus'] = 1
 
 sampleParser = profileLib.sampleParser()
 
@@ -162,6 +168,11 @@ if args.power_sensor is not False:
 
 power = 0
 
+if len(useCpus) == 0:
+    defaultSample = sampleParser.parseFromPC(0)
+
+cumEnergy = 0
+
 for sample in csvProfile:
     if (i % updateInterval == 0):
         currentTime = time.time()
@@ -187,11 +198,16 @@ for sample in csvProfile:
             power = float(sample[powerColumns[args.power_sensor]])
         else:
             power = float(sample[voltageColumns[args.power_sensor]]) * float(sample[currentColumns[args.power_sensor]])
+        cumEnergy += power * (wallTime - prevTime)
 
     processedSample = []
-    for cpu in useCpus:
-        pc = int(sample[pcColumns[cpu]])
-        processedSample.append([cpu, wallTime - prevTime, sampleParser.parseFromPC(pc)])
+    if len(useCpus) == 0:
+        processedSample = [[0, wallTime - prevTime, defaultSample]]
+    else:
+        processedSample = []
+        for cpu in useCpus:
+            pc = int(sample[pcColumns[cpu]])
+            processedSample.append([cpu, wallTime - prevTime, sampleParser.parseFromPC(pc)])
 
     prevTime = wallTime
     profile['profile'].append([power, wallTime - startTime, processedSample])
@@ -200,6 +216,8 @@ del csvProfile
 del csvFile
 
 profile['samplingTime'] = wallTime - startTime
+profile['energy'] = cumEnergy
+profile['power'] = cumEnergy / profile['samplingTime']
 profile['binaries'] = sampleParser.getBinaryMap()
 profile['functions'] = sampleParser.getFunctionMap()
 profile['files'] = sampleParser.getFileMap()

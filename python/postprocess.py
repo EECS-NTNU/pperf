@@ -17,6 +17,8 @@ profile = {
     'samplingTime': 0,
     'latencyTime': 0,
     'volts': 0,
+    'energy': 0,
+    'power': 0,
     'cpus': 0,
     'name': "",
     'target': "",
@@ -187,6 +189,7 @@ prevThreadCpuTimes = {}
 offsetSampleWallTime = None
 lastTime = time.time()
 updateInterval = max(1, int(sampleCount / 200))
+cumEnergy = 0
 
 for sample in rawSamples:
     if (i % updateInterval == 0):
@@ -208,6 +211,7 @@ for sample in rawSamples:
     processedSample = []
     sampleWallTime = sample[0] - offsetSampleWallTime
     samplePower = sample[1] * useVolts
+    cumEnergy = samplePower * sampleWallTime
 
     for thread in sample[2]:
         if not thread[0] in prevThreadCpuTimes:
@@ -223,6 +227,8 @@ for sample in rawSamples:
 profile['binaries'] = sampleParser.getBinaryMap()
 profile['functions'] = sampleParser.getFunctionMap()
 profile['files'] = sampleParser.getFileMap()
+profile['energy'] = cumEnergy
+profile['power'] = cumEnergy / profile['samplingTime']
 
 print("\nPost processing... finished!")
 
