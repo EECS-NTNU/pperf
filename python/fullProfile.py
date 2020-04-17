@@ -22,15 +22,16 @@ parser.add_argument("-e", "--end", type=float, help="end time (seconds)")
 parser.add_argument("-i", "--interpolate", type=int, help="interpolate samples")
 parser.add_argument("-a", "--aggregate-keys", help=f"aggregate after this list (%(default)s) e.g.: {','.join(aggregateKeyNames)}", default="binary,procedure")
 parser.add_argument("-ls", "--lstrip", default=None, help=f"strip labels on the left (default target binary is stripped)")
-parser.add_argument("-p", "--plot", default=False, action="store_true", help="plot standard html file")
+parser.add_argument("-o", "--output", help="save html plot")
+parser.add_argument("--browser", default=False, action="store_true", help="open plot on browser")
 parser.add_argument("--csv-power", help="save time, power csv to file")
 parser.add_argument("--csv-threads", help="save thread csv containing  each sample with threads")
 parser.add_argument("--csv-gantt-threads", help="save gannt like thread csv")
 
 args = parser.parse_args()
 
-if (not args.plot and not args.csv_power and not args.csv_threads and not args.csv_gantt_threads):
-    args.plot = True
+if (not args.browser and not args.output and not args.csv_power and not args.csv_threads and not args.csv_gantt_threads):
+    args.browser = True
 
 if (not args.profile) or (not os.path.isfile(args.profile)):
     print("ERROR: profile not found")
@@ -176,7 +177,7 @@ del profile
 del sampleFormatter
 gc.collect()
 
-if (args.plot):
+if (args.browser or args.output):
     if args.interpolate > 1:
         title += f", {args.interpolate} samples interpolated"
         threadAxisHeight = 0.1 + (0.233 * min(1, len(threads) / 32))
@@ -226,4 +227,8 @@ if (args.plot):
     del threads
     del threadDisplay
     gc.collect()
-    fig.show()
+    if (args.output):
+        plotly.offline.plot(fig, filename=args.output, auto_open=False)
+        print(f'Saved to {args.output}')
+    if (args.browser):
+        fig.show()
