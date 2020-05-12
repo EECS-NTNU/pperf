@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 # To export to any other format than html, you need a special orca version from plotly
 # https://github.com/plotly/orca/releases

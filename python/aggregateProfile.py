@@ -18,6 +18,7 @@ parser.add_argument("profiles", help="postprocessed profiles from intrvelf", nar
 parser.add_argument("-a", "--aggregate-keys", help=f"aggregate after this list (%(default)s) e.g.: {','.join(aggregateKeyNames)}", default="binary,procedure")
 parser.add_argument("--use-time", action="store_true", help="sort and plot based on time (default)", default=False)
 parser.add_argument("--use-energy", action="store_true", help="sort and plot based on energy", default=False)
+parser.add_argument("--totals", action="store_true", help="output total numbers", default=False)
 parser.add_argument("-l", "--limit", help="limit output to %% of time", type=float, default=0)
 parser.add_argument("-t", "--table", help="output csv table")
 parser.add_argument("-p", "--plot", help="plotly html file")
@@ -325,14 +326,32 @@ if (args.plot) or (args.export):
     del fig
     gc.collect()
 
-if (args.table or not args.quiet):
-    aggregationLabel = numpy.insert(aggregationLabel[::-1], 0, "_total")
-    times = numpy.insert(times[::-1], 0, totalTime)
-    execs = numpy.insert(execs[::-1], 0, totalExec)
-    energies = numpy.insert(energies[::-1], 0, totalEnergy)
-    powers = numpy.insert(powers[::-1], 0, totalPower)
-    samples = numpy.insert(samples[::-1], 0, totalSamples)
+if (args.output):
+    if args.output.endswith("bz2"):
+        output = bz2.BZ2File(args.output, "wb")
+    else:
+        output = open(args.output, "wb")
+    pickle.dump(aggregatedProfile, output, pickle.HIGHEST_PROTOCOL)
+    print(f"Aggregated profile saved to {args.output}")
 
+
+if (not args.table and args.quiet):
+    exit(0)
+
+aggregationLabel = aggregationLabel[::-1]
+times = times[::-1]
+execs = execs[::-1]
+energies = energies[::-1]
+powers = powers[::-1]
+samples = samples[::-1]
+
+if args.totals:
+    aggregationLabel = numpy.insert(aggregationLabel, 0, "_total")
+    times = numpy.insert(times, 0, totalTime)
+    execs = numpy.insert(execs, 0, totalExec)
+    energies = numpy.insert(energies, 0, totalEnergy)
+    powers = numpy.insert(powers, 0, totalPower)
+    samples = numpy.insert(samples, 0, totalSamples)
 
 if (args.table):
     if args.table.endswith("bz2"):
@@ -344,14 +363,6 @@ if (args.table):
         table.write(f"{f};{t};{e};{s};{m};{n}\n")
     table.close()
     print(f"CSV saved to {args.table}")
-
-if (args.output):
-    if args.output.endswith("bz2"):
-        output = bz2.BZ2File(args.output, "wb")
-    else:
-        output = open(args.output, "wb")
-    pickle.dump(aggregatedProfile, output, pickle.HIGHEST_PROTOCOL)
-    print(f"Aggregated profile saved to {args.output}")
 
 if (not args.quiet):
     relativeSamples = [f"{x / totalSamples:.3f}" for x in samples]
