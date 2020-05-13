@@ -153,8 +153,8 @@ if (not args.vmmap):
     exit(0)
 
 vmmapFile = open(args.vmmap, "w")
-vmmapBaseAddress = min(samples)
-vmmapLength = max(samples) - min(samples)
+vmmapBaseAddress = 0 # min(samples)
+vmmapLength = max(samples) # - min(samples)
 vmmapTarget = args.executable
 vmmapFile.write(f'0x{vmmapBaseAddress:016x} 0x{vmmapLength:016x} {vmmapTarget}\n')
 vmmapFile.close()
