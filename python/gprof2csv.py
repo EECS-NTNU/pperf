@@ -95,21 +95,17 @@ while True:
         for i in range(histSize):
             pc = lowPc + int(i * step)
             try:
-                (count,) = struct.unpack_from(endianess + 'h', binProfile, binOffset)
+                (count,) = struct.unpack_from(endianess + 'H', binProfile, binOffset)
                 binOffset += 2
             except Exception as e:
                 raise Exception("Unexpected end of file")
-            # print(f'0x{pc:x}: {count}')
             for i in range(count):
                 samples.append(pc)
             localSampleCount += count
         sampleTime += localSampleCount / profRate
         sampleCount += localSampleCount
     elif recordType == 1:
-        try:
-            binOffset += 2 * binPayloadSize + binWordSize
-        except Exception as e:
-            raise Exception("Unexpected end of file")
+        binOffset += 2 * binPayloadSize + binWordSize
         arcrecords += 1
     elif recordType == 2:
         try:
