@@ -121,6 +121,9 @@ parser.add_argument("--limit-time", help="include top entries until limit (in pe
 parser.add_argument("--time-threshold", help="time contribution threshold to include (in percent, e.g. 0.0 - 1.0)", type=float, default=0)
 parser.add_argument("--limit-energy-top", help="include top n entries ranked after energy", type=int, default=0)
 parser.add_argument("--limit-energy", help="include top entries until limit (in percent, e.g. 0.0 - 1.0)", type=float, default=0)
+parser.add_argument("--exclude-kernel", help="exclude kernel symbols from comparison", action="store_true", default=False)
+parser.add_argument("--exclude-foreign", help="exclude foreign symbols from comparison", action="store_true", default=False)
+parser.add_argument("--exclude-unknown", help="exclude unknown symbols from comparison", action="store_true", default=False)
 parser.add_argument("--energy-threshold", help="energy contribution threshold (in percent, e.g. 0.0 - 1.0)", type=float, default=0)
 parser.add_argument('--names', help='names of the provided profiles (comma sepperated)', type=str, default=False)
 parser.add_argument('-n', '--name', action='append', help='name the provided profiles', default=[])
@@ -298,6 +301,9 @@ for index, errorChart in enumerate(errorCharts):
             if key not in baselineChart['keys']:
                 # Key was never compared before, check thresholds and limitations whether to include or not
                 if (
+                        (args.exclude_kernel and key.startswith(profileLib.LABEL_KERNEL)) or
+                        (args.exclude_foreign and key.startswith(profileLib.LABEL_FOREIGN)) or
+                        (args.exclude_unknown and key.startswith(profileLib.LABEL_UNKNOWN)) or
                         ((args.limit_time_top is not 0) and (includedKeys >= args.limit_time_top)) or
                         ((args.limit_energy_top is not 0) and (includedKeys >= args.limit_energy_top)) or
                         ((args.limit_time is not 0) and ((includedBaselineTime / baselineChart['fullTotals'][cmpTime]) >= args.limit_time)) or
