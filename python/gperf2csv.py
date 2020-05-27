@@ -87,9 +87,15 @@ while (True):
     for i in range(sample[0]):
         samples.append(sample[2])
 
-samplingPeriod = float(header[3]) / 1000000.0 if not args.time else args.time / len(samples)
+samplingPeriod = float(header[3]) / 1000000.0
+samplingFrequency = 1 / samplingPeriod
 
-print(f"Extracted {sampleCount} samples (ignored {stackTraces} stack traces) for {len(samples) * samplingPeriod:.2f}s sampling time")
+if args.time:
+    samplingPeriod = args.time / len(samples)
+    print(f'Adjusting profile frequency {samplingFrequency:.2f} Hz to {1 / samplingPeriod:.2f} Hz')
+    samplingFrequency = 1 / samplingPeriod
+
+print(f"Extracted {sampleCount} samples taken at {samplingFrequency:.2f} Hz (ignored {stackTraces} stack traces) for {len(samples) * samplingPeriod:.2f}s time")
 
 if args.output.endswith(".bz2"):
     csvFile = bz2.open(args.output, "wt")

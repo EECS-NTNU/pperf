@@ -116,8 +116,10 @@ parser.add_argument("--use-exec-times", help="compare execution time", action="s
 parser.add_argument("-e", "--error", help=f"error function (default: {errorFunctions[0][0]})", default=False, choices=errorFunctions[:, 0], type=str.lower)
 parser.add_argument("-a", "--aggregate", help="aggregate erros", default=False, choices=aggregateFunctions[:, 0], type=str.lower)
 parser.add_argument("-c", "--compensation", help="switch on latency compensation (experimental)", action="store_true", default=False)
+parser.add_argument("--limit-time-top", help="include top n entries ranked after time", type=int, default=0)
 parser.add_argument("--limit-time", help="include top entries until limit (in percent, e.g. 0.0 - 1.0)", type=float, default=0)
 parser.add_argument("--time-threshold", help="time contribution threshold to include (in percent, e.g. 0.0 - 1.0)", type=float, default=0)
+parser.add_argument("--limit-energy-top", help="include top n entries ranked after energy", type=int, default=0)
 parser.add_argument("--limit-energy", help="include top entries until limit (in percent, e.g. 0.0 - 1.0)", type=float, default=0)
 parser.add_argument("--energy-threshold", help="energy contribution threshold (in percent, e.g. 0.0 - 1.0)", type=float, default=0)
 parser.add_argument('--names', help='names of the provided profiles (comma sepperated)', type=str, default=False)
@@ -167,13 +169,24 @@ if args.use_energy:
     header = "Energy "
     cmpOffset = cmpEnergy
 
-if (args.limit_time is not 0 and args.limit_energy is not 0):
-    print("ERROR: time limit and energy limit cannot be used at the same time")
+if (args.limit_time is not 0 or args.limit_time_top is not 0) and (args.limit_energy is not 0 or args.limit_energy_top is not 0):
+    print("ERROR: cannot simultanously limit after energy and time!")
+    parser.print_help()
+    sys.exit(1)
+
+
+if args.limit_time_top is not 0 and args.limit_time_top < 0:
+    print("ERROR: time limit top can't be negative")
     parser.print_help()
     sys.exit(0)
 
 if (args.limit_time is not 0 and (args.limit_time < 0 or args.limit_time > 1.0)):
     print("ERROR: time limit out of range")
+    parser.print_help()
+    sys.exit(0)
+
+if args.limit_energy_top is not 0 and args.limit_energy_top < 0:
+    print("ERROR: energy limit top can't be negative")
     parser.print_help()
     sys.exit(0)
 
@@ -233,7 +246,7 @@ chart = {'name': '', 'fullTotals': [0.0, 0.0, 0.0, 0.0, 0.0], 'totals': [0.0, 0.
 baselineChart = copy.deepcopy(chart)
 baselineChart['name'] = f"{baselineProfile['samples'] / baselineProfile['samplingTime']:.2f} Hz, {baselineProfile['samplingTime']:.2f} s, {baselineProfile['latencyTime'] * 1000000 / baselineProfile['samples']:.2f} us"
 
-if (args.limit_energy is not 0):
+if (args.limit_energy is not 0 or args.limit_energy_top is not 0):
     baselineProfile['profile'] = collections.OrderedDict(sorted(baselineProfile['profile'].items(), key=lambda x: operator.itemgetter(profileLib.aggEnergy)(x[1]), reverse=True))
 else:
     baselineProfile['profile'] = collections.OrderedDict(sorted(baselineProfile['profile'].items(), key=lambda x: operator.itemgetter(profileLib.aggTime)(x[1]), reverse=True))
@@ -252,6 +265,7 @@ errorCharts = [copy.deepcopy(chart) for x in args.profiles]
 
 includedBaselineTime = 0.0
 includedBaselineEnergy = 0.0
+includedKeys = 0
 
 i = 1
 for index, errorChart in enumerate(errorCharts):
@@ -284,6 +298,8 @@ for index, errorChart in enumerate(errorCharts):
             if key not in baselineChart['keys']:
                 # Key was never compared before, check thresholds and limitations whether to include or not
                 if (
+                        ((args.limit_time_top is not 0) and (includedKeys >= args.limit_time_top)) or
+                        ((args.limit_energy_top is not 0) and (includedKeys >= args.limit_energy_top)) or
                         ((args.limit_time is not 0) and ((includedBaselineTime / baselineChart['fullTotals'][cmpTime]) >= args.limit_time)) or
                         ((args.limit_energy is not 0) and ((includedBaselineEnergy / baselineChart['fullTotals'][cmpEnergy]) >= args.limit_energy)) or
                         ((args.time_threshold is not 0) and ((baselineProfile['profile'][key][profileLib.aggTime] / baselineChart['fullTotals'][cmpTime]) < args.time_threshold)) or
@@ -301,6 +317,7 @@ for index, errorChart in enumerate(errorCharts):
                 ])
                 includedBaselineTime += baselineProfile['profile'][key][profileLib.aggTime]
                 includedBaselineEnergy += baselineProfile['profile'][key][profileLib.aggEnergy]
+                includedKeys += 1
                 # print(f'include {key} with now beeing at {includedBaselineTime / baselineChart["fullTotals"][cmpTime]:.3f} time and {includedBaselineEnergy / baselineChart["fullTotals"][cmpEnergy]:.3f} energy')
                 for chart in errorCharts:
                     chart['values'].append([0.0, 0.0, 0.0, 0.0, 0.0])
@@ -325,7 +342,6 @@ for index, errorChart in enumerate(errorCharts):
     errorChart['totals'][cmpRelSamples] = 1
 
     del profile
-
 
 if len(baselineChart['keys']) == 0:
     raise Exception("Nothing found to compare, limit too strict?")

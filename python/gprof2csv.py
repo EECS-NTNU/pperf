@@ -12,6 +12,7 @@ parser.add_argument("-o", "--output", help="output csv")
 parser.add_argument("-v", "--vmmap", help="output vmmap")
 parser.add_argument("-e", "--executable", help="name of the executable")
 parser.add_argument("-t", "--time", type=float, help="use runtime instead of internal period")
+parser.add_argument("--debug", action="store_true", help="debug output")
 parser.add_argument("--arch-32", action="store_true", help="profile was taken on a 32 bit machine")
 parser.add_argument("--arch-64", action="store_true", help="profile was taken on a 64 bit machine (default)")
 parser.add_argument("-l", "--little-endian", action="store_true", help="parse cpuprofile using little endianess")
@@ -99,13 +100,18 @@ while True:
                 binOffset += 2
             except Exception as e:
                 raise Exception("Unexpected end of file")
+            if count > 0 and args.debug:
+                print(f'[PC] 0x{pc:x}')
             for i in range(count):
                 samples.append(pc)
             localSampleCount += count
         sampleTime += localSampleCount / profRate
         sampleCount += localSampleCount
     elif recordType == 1:
+        (toPc, fromPc, count) = struct.unpack_from(endianess + binPayload + binPayload + binWord, binProfile, binOffset)
         binOffset += 2 * binPayloadSize + binWordSize
+        if args.debug:
+            print(f'[Call] Times: {count}, 0x{fromPc:x} -> 0x{toPc:x}')
         arcrecords += 1
     elif recordType == 2:
         try:
