@@ -19,7 +19,14 @@ parser.add_argument("-a", "--aggregate-keys", help=f"aggregate after this list (
 parser.add_argument("--use-time", action="store_true", help="sort and plot based on time (default)", default=False)
 parser.add_argument("--use-energy", action="store_true", help="sort and plot based on energy", default=False)
 parser.add_argument("--totals", action="store_true", help="output total numbers", default=False)
-parser.add_argument("-l", "--limit", help="limit output to %% of time", type=float, default=0)
+parser.add_argument("--limit-time", help="limit output to %% of time", type=float, default=0)
+parser.add_argument("--limit-energy", help="limit output to %% of time", type=float, default=0)
+parser.add_argument("--limit-time-top", help="limit to top symbols after time", type=int, default=0)
+parser.add_argument("--limit-energy-top", help="limit to top symbols after energy", type=int, default=0)
+parser.add_argument("--exclude-kernel", help="exclude kernel symbols", action="store_true")
+parser.add_argument("--exclude-foreign", help="exclude foreign symbols", action="store_true")
+parser.add_argument("--exclude-unknown", help="exclude unknown sybmols", action="store_true")
+
 parser.add_argument("-t", "--table", help="output csv table")
 parser.add_argument("-p", "--plot", help="plotly html file")
 parser.add_argument("-o", "--output", help="output aggregated profile")
@@ -37,12 +44,34 @@ args = parser.parse_args()
 
 if (args.use_time is False and args.use_energy is False):
     args.use_time = True
+    args.use_energy = False
+
+if args.use_time:
+    args.use_energy = False
+
+if args.use_energy:
+    args.use_time = False
 
 if not args.use_cpu_time and not args.use_wall_time:
     args.use_cpu_time = True
 
-if (args.limit is not 0 and (args.limit < 0 or args.limit > 1)):
-    print("ERROR: limit is out of range")
+if (args.limit_energy_top and not args.use_energy):
+    print("ERROR: limit energy top option can only be used with energy (--use-energy)")
+    parser.print_help()
+    sys.exit(0)
+
+if (args.limit_time_top and not args.use_time):
+    print("ERROR: limit time top option can only be used with time (--use-time)")
+    parser.print_help()
+    sys.exit(0)
+
+if (args.limit_time != 0 and (args.limit_time < 0 or args.limit_time > 1)):
+    print("ERROR: limit_time is out of range")
+    parser.print_help()
+    sys.exit(0)
+
+if (args.limit_energy != 0 and (args.limit_energy < 0 or args.limit_energy > 1)):
+    print("ERROR: limit_energy is out of range")
     parser.print_help()
     sys.exit(0)
 
@@ -226,30 +255,70 @@ samples = numpy.array(values[:, profileLib.aggSamples], dtype=float)
 execs = numpy.array(values[:, profileLib.aggExecs], dtype=float)
 aggregationLabel = values[:, profileLib.aggLabel]
 
+if (args.exclude_kernel or args.exclude_foreign or args.exclude_unknown):
+    keep = numpy.ones(aggregationLabel.shape, dtype=bool)
+    for i, label in enumerate(aggregationLabel):
+        if ((args.exclude_kernel and label.startswith(profileLib.LABEL_KERNEL)) or
+           (args.exclude_foreign and label.startswith(profileLib.LABEL_FOREIGN)) or
+           (args.exclude_unknown and label.startswith(profileLib.LABEL_UNKNOWN))):
+            keep[i] = False
+    times = times[keep]
+    execs = execs[keep]
+    energies = energies[keep]
+    powers = powers[keep]
+    samples = samples[keep]
+    aggregationLabel = aggregationLabel[keep]
+
 totalTime = numpy.sum(times)
 totalEnergy = numpy.sum(energies)
 totalPower = totalEnergy / totalTime if totalTime > 0 else 0
 totalExec = numpy.sum(execs)
 totalSamples = numpy.sum(samples)
 
-if args.limit is not 0:
+cutOff = None
+
+if args.limit_time != 0:
     accumulate = 0.0
-    accumulateLimit = totalTime * args.limit
+    accumulateLimit = totalTime * args.limit_time
     for index, value in enumerate(times[::-1]):
         accumulate += value
         if (accumulate >= accumulateLimit):
-            cutOff = len(energies) - (index + 1)
-            print(f"Limit output to {index+1}/{len(times)} values...")
-            times = times[cutOff:]
-            execs = execs[cutOff:]
-            energies = energies[cutOff:]
-            powers = powers[cutOff:]
-            aggregationLabel = aggregationLabel[cutOff:]
-            samples = samples[cutOff:]
+            timeCutOff = len(times) - (index + 1)
+            if cutOff is None or timeCutOff > cutOff:
+                cutOff = timeCutOff
             break
 
-labels = [f"{x:.4f} s, {s:.2f} W" + (f", {x * 100 / totalTime if totalTime > 0 else 0:.2f}%" if args.use_time else f", {y * 100 / totalEnergy if totalEnergy > 0 else 0:.2f}%") for x, s, y in zip(times, powers, energies)]
+if args.limit_energy != 0:
+    accumulate = 0.0
+    accumulateLimit = totalEnergy * args.limit_energy
+    for index, value in enumerate(energies[::-1]):
+        accumulate += value
+        if (accumulate >= accumulateLimit):
+            energyCutOff = len(energies) - (index + 1)
+            if cutOff is None or energyCutOff > cutOff:
+                cutOff = energyCutOff
+            break
 
+if args.limit_time_top != 0 and args.limit_time_top < len(times):
+    nCutOff = len(times) - (args.limit_time_top)
+    if cutOff is None or nCutOff > cutOff:
+        cutOff = nCutOff
+
+if args.limit_energy_top != 0 and args.limit_energ_top < len(energies):
+    nCutOff = len(energies) - (args.limit_energy_top)
+    if cutOff is None or nCutOff > cutOff:
+        cutOff = nCutOff
+
+if cutOff is not None:
+    print(f"Limit output to {len(times) - cutOff}/{len(times)}...")
+    times = times[cutOff:]
+    execs = execs[cutOff:]
+    energies = energies[cutOff:]
+    powers = powers[cutOff:]
+    aggregationLabel = aggregationLabel[cutOff:]
+    samples = samples[cutOff:]
+
+labels = [f"{x:.4f} s, {s:.2f} W" + (f", {x * 100 / totalTime if totalTime > 0 else 0:.2f}%" if args.use_time else f", {y * 100 / totalEnergy if totalEnergy > 0 else 0:.2f}%") for x, s, y in zip(times, powers, energies)]
 
 # aggregationLabel = [ re.sub(r'\(.*\)$', '', x) for x in aggregationLabel ]
 

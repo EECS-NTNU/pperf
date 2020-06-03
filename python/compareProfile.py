@@ -172,38 +172,38 @@ if args.use_energy:
     header = "Energy "
     cmpOffset = cmpEnergy
 
-if (args.limit_time is not 0 or args.limit_time_top is not 0) and (args.limit_energy is not 0 or args.limit_energy_top is not 0):
+if (args.limit_time != 0 or args.limit_time_top != 0) and (args.limit_energy != 0 or args.limit_energy_top != 0):
     print("ERROR: cannot simultanously limit after energy and time!")
     parser.print_help()
     sys.exit(1)
 
 
-if args.limit_time_top is not 0 and args.limit_time_top < 0:
+if args.limit_time_top != 0 and args.limit_time_top < 0:
     print("ERROR: time limit top can't be negative")
     parser.print_help()
     sys.exit(0)
 
-if (args.limit_time is not 0 and (args.limit_time < 0 or args.limit_time > 1.0)):
+if (args.limit_time != 0 and (args.limit_time < 0 or args.limit_time > 1.0)):
     print("ERROR: time limit out of range")
     parser.print_help()
     sys.exit(0)
 
-if args.limit_energy_top is not 0 and args.limit_energy_top < 0:
+if args.limit_energy_top != 0 and args.limit_energy_top < 0:
     print("ERROR: energy limit top can't be negative")
     parser.print_help()
     sys.exit(0)
 
-if (args.limit_energy is not 0 and (args.limit_energy < 0 or args.limit_energy > 1.0)):
+if (args.limit_energy != 0 and (args.limit_energy < 0 or args.limit_energy > 1.0)):
     print("ERROR: energy limit out of range")
     parser.print_help()
     sys.exit(0)
 
-if (args.time_threshold is not 0 and (args.time_threshold < 0 or args.time_threshold > 1.0)):
+if (args.time_threshold != 0 and (args.time_threshold < 0 or args.time_threshold > 1.0)):
     print("ERROR: time threshold out of range")
     parser.print_help()
     sys.exit(0)
 
-if (args.energy_threshold is not 0 and (args.energy_threshold < 0 or args.energy_threshold > 1.0)):
+if (args.energy_threshold != 0 and (args.energy_threshold < 0 or args.energy_threshold > 1.0)):
     print("ERROR: energy threshold out of range")
     parser.print_help()
     sys.exit(0)
@@ -249,7 +249,7 @@ chart = {'name': '', 'fullTotals': [0.0, 0.0, 0.0, 0.0, 0.0], 'totals': [0.0, 0.
 baselineChart = copy.deepcopy(chart)
 baselineChart['name'] = f"{baselineProfile['samples'] / baselineProfile['samplingTime']:.2f} Hz, {baselineProfile['samplingTime']:.2f} s, {baselineProfile['latencyTime'] * 1000000 / baselineProfile['samples']:.2f} us"
 
-if (args.limit_energy is not 0 or args.limit_energy_top is not 0):
+if (args.limit_energy != 0 or args.limit_energy_top != 0):
     baselineProfile['profile'] = collections.OrderedDict(sorted(baselineProfile['profile'].items(), key=lambda x: operator.itemgetter(profileLib.aggEnergy)(x[1]), reverse=True))
 else:
     baselineProfile['profile'] = collections.OrderedDict(sorted(baselineProfile['profile'].items(), key=lambda x: operator.itemgetter(profileLib.aggTime)(x[1]), reverse=True))
@@ -304,13 +304,12 @@ for index, errorChart in enumerate(errorCharts):
                         (args.exclude_kernel and key.startswith(profileLib.LABEL_KERNEL)) or
                         (args.exclude_foreign and key.startswith(profileLib.LABEL_FOREIGN)) or
                         (args.exclude_unknown and key.startswith(profileLib.LABEL_UNKNOWN)) or
-                        ((args.limit_time_top is not 0) and (includedKeys >= args.limit_time_top)) or
-                        ((args.limit_energy_top is not 0) and (includedKeys >= args.limit_energy_top)) or
-                        ((args.limit_time is not 0) and ((includedBaselineTime / baselineChart['fullTotals'][cmpTime]) >= args.limit_time)) or
-                        ((args.limit_energy is not 0) and ((includedBaselineEnergy / baselineChart['fullTotals'][cmpEnergy]) >= args.limit_energy)) or
-                        ((args.time_threshold is not 0) and ((baselineProfile['profile'][key][profileLib.aggTime] / baselineChart['fullTotals'][cmpTime]) < args.time_threshold)) or
-                        ((args.energy_threshold is not 0) and ((baselineProfile['profile'][key][profileLib.aggEnergy] / baselineChart['fullTotals'][cmpEnergy]) < args.energy_threshold))
-                ):
+                        ((args.limit_time_top != 0) and (includedKeys >= args.limit_time_top)) or
+                        ((args.limit_energy_top != 0) and (includedKeys >= args.limit_energy_top)) or
+                        ((args.limit_time != 0) and ((includedBaselineTime / baselineChart['fullTotals'][cmpTime]) >= args.limit_time)) or
+                        ((args.limit_energy != 0) and ((includedBaselineEnergy / baselineChart['fullTotals'][cmpEnergy]) >= args.limit_energy)) or
+                        ((args.time_threshold != 0) and ((baselineProfile['profile'][key][profileLib.aggTime] / baselineChart['fullTotals'][cmpTime]) < args.time_threshold)) or
+                        ((args.energy_threshold != 0) and ((baselineProfile['profile'][key][profileLib.aggEnergy] / baselineChart['fullTotals'][cmpEnergy]) < args.energy_threshold))                ):
                     continue
                 baselineChart['keys'].append(key)
                 baselineChart['labels'].append(baselineProfile['profile'][key][profileLib.aggLabel])
