@@ -21,8 +21,10 @@ parser.add_argument("--use-energy", action="store_true", help="sort and plot bas
 parser.add_argument("--totals", action="store_true", help="output total numbers", default=False)
 parser.add_argument("--limit-time", help="limit output to %% of time", type=float, default=0)
 parser.add_argument("--limit-energy", help="limit output to %% of time", type=float, default=0)
+parser.add_argument("--time-threshold", help="limit to symbols with time contribution (in percent, e.g. 0.0 - 1.0)", type=float, default=0)
 parser.add_argument("--limit-time-top", help="limit to top symbols after time", type=int, default=0)
 parser.add_argument("--limit-energy-top", help="limit to top symbols after energy", type=int, default=0)
+parser.add_argument("--energy-threshold", help="limit to symbols with energy contribution (in percent, e.g. 0.0 - 1.0)", type=float, default=0)
 parser.add_argument("--exclude-kernel", help="exclude kernel symbols", action="store_true")
 parser.add_argument("--exclude-foreign", help="exclude foreign symbols", action="store_true")
 parser.add_argument("--exclude-unknown", help="exclude unknown sybmols", action="store_true")
@@ -72,6 +74,16 @@ if (args.limit_time != 0 and (args.limit_time < 0 or args.limit_time > 1)):
 
 if (args.limit_energy != 0 and (args.limit_energy < 0 or args.limit_energy > 1)):
     print("ERROR: limit_energy is out of range")
+    parser.print_help()
+    sys.exit(0)
+
+if (args.time_threshold != 0 and (args.time_threshold < 0 or args.time_threshold > 1.0)):
+    print("ERROR: time threshold out of range")
+    parser.print_help()
+    sys.exit(0)
+
+if (args.energy_threshold != 0 and (args.energy_threshold < 0 or args.energy_threshold > 1.0)):
+    print("ERROR: energy threshold out of range")
     parser.print_help()
     sys.exit(0)
 
@@ -274,6 +286,20 @@ totalEnergy = numpy.sum(energies)
 totalPower = totalEnergy / totalTime if totalTime > 0 else 0
 totalExec = numpy.sum(execs)
 totalSamples = numpy.sum(samples)
+
+if args.time_threshold != 0 or args.energy_threshold != 0:
+    keep = numpy.ones(times.shape, dtype=bool)
+    for pos, _ in enumerate(times):
+        if args.time_threshold != 0:
+            if ((args.time_threshold != 0 and (times[pos] / totalTime) < args.time_threshold) or
+               (args.energy_threshold != 0 and (energies[pos] / totalEnergy) < args.energy_threshold)):
+                keep[pos] = False
+    times = times[keep]
+    execs = execs[keep]
+    energies = energies[keep]
+    powers = powers[keep]
+    samples = samples[keep]
+    aggregationLabel = aggregationLabel[keep]
 
 cutOff = None
 
