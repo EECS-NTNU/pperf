@@ -155,6 +155,9 @@ for line in perf.stdout:
 
     # print(f"Type {sampleType}, Source {sampleSource}, Time {sampleTime}, ParentId {sampleParentId}, ThreadId {sampleThreadId}, PC {samplePc}, BaseAddr {sampleMmapBaseAddr}, Length {sampleMmapLength}, Target {sampleMmapTarget}")
 
+if len(seenCpus) == 0:
+    raise Exception(f"ERROR: could not extract any samples from {args.perfdata}, maybe profile perf version is incompatible with local perf")
+
 if args.output.endswith(".bz2"):
     csvFile = bz2.open(args.output, "wt")
 else:

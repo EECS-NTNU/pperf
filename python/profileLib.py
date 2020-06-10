@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-
+import sys
 import bz2
 import re
 import os
@@ -138,7 +138,7 @@ class elfCache:
         if elf not in self.caches:
             self.openOrCreateCache(elf)
         if pc not in self.caches[elf]['cache']:
-            print(f"WARNING: 0x{pc:x} does not exist in cache for file {elf}")
+            print(f"WARNING: 0x{pc:x} does not exist in cache for file {elf}", file=sys.stderr)
             return addr2line(elf, pc)
         else:
             return self.caches[elf]['cache'][pc]
@@ -167,7 +167,7 @@ class elfCache:
             for map in maps:
                 start = int(map.split(":")[0], 0)
                 end = int(map.split(":")[1], 0)
-                print(f"\rCreating address cache for {elf} from 0x{start:x} to 0x{end:x}...")
+                print(f"\rCreating address cache for {elf} from 0x{start:x} to 0x{end:x}...", file=sys.stderr)
                 self.caches[elf]['cache'].update(batchAddr2line(elf, list(range(start, end + 1))))
 
             pickle.dump(self.caches[elf], open(cacheName, "wb"), pickle.HIGHEST_PROTOCOL)
