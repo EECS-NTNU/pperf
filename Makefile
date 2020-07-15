@@ -7,6 +7,12 @@ DEPDIR := github
 
 LINKING := -lrt
 
+prefix := /usr/local/bin
+
+install: $(TARGETS)
+	mkdir -p $(prefix)
+	cp $(TARGETS) $(prefix)/
+
 all: $(TARGETS)
 
 pperf: % : %.o pmu/dummy.o
