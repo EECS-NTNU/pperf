@@ -5,7 +5,7 @@
 
 
 #ifdef DEBUG
-#define debug_printf(...) fprintf(stderr, __VA_ARGS__);
+#define debug_printf(...) fprintf(stderr, __VA_ARGS__)
 #else
 #define debug_printf(...)
 #endif
@@ -716,7 +716,7 @@ int main(int const argc, char **argv) {
                 if (intrTarget == samplingTarget && signal == SIGTRAP && (status >> 16) == PTRACE_EVENT_EXIT) {
                     signal = 0;
                     processMap = getProcessVMMaps(intrTarget, 0);
-                    debug_printf("[%d] exit traced of root target\n", intrTarget)
+                    debug_printf("[%d] exit traced of root target\n", intrTarget);
                 } else if (signal == SIGTRAP && (status >> 16) == PTRACE_EVENT_CLONE) {
                     signal = 0;
                } else {
@@ -768,7 +768,7 @@ int main(int const argc, char **argv) {
                 fprintf(stderr, "ERROR: could not read cputime of tid %d\n", tasks.list[i].tid);
                 ret = 1; goto exitWithTarget;
             }
-            tasks.list[i].cputime = cputime
+            tasks.list[i].cputime = cputime;
             debug_printf("[%d] pc: 0x%lx, cputime: %lu\n", tasks.list[i].tid, tasks.list[i].pc, tasks.list[i].cputime);
             i++;
         }
