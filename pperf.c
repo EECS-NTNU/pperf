@@ -10,7 +10,7 @@
 #define debug_printf(...)
 #endif
 
-#if !defined(__amd64__) && !defined(__aarch64__)
+#if !defined(__amd64__) && !defined(__aarch64__) && !defined(__riscv)
 #error "Architecture not supported!"
 #endif
 
@@ -757,7 +757,11 @@ int main(int const argc, char **argv) {
             }
 #ifdef __aarch64__
             tasks.list[i].pc = regs.pc;
-#else
+#endif
+#ifdef __riscv
+            tasks.list[i].pc = regs.pc;
+#endif
+#ifdef __amd64__
             tasks.list[i].pc = regs.rip;
 #endif
             if (getCPUTimeFromSchedstat(tasks.schedstats[i], &cputime)) {
