@@ -7,6 +7,7 @@ import bz2
 import pickle
 import plotly
 import plotly.graph_objs as go
+from plotly.subplots import make_subplots
 import numpy
 import profileLib
 import gc
@@ -184,7 +185,7 @@ if (args.browser or args.output):
 
     print(f"Going to plot {len(samples)} samples from {times[0]}s to {times[-1]}s")
 
-    fig = plotly.subplots.make_subplots(
+    fig = make_subplots(
         rows=2,
         cols=1,
         specs=[[{}], [{}]],
