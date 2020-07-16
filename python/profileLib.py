@@ -166,7 +166,7 @@ class elfCache:
             maps = readelf.stdout.decode('utf-8').split('\n')[:-1]
             for map in maps:
                 start = int(map.split(":")[0], 0)
-                end = int(map.split(":")[1], 0)
+                end = int(map.split(":")[1], 0) + start
                 print(f"\rCreating address cache for {elf} from 0x{start:x} to 0x{end:x}...", file=sys.stderr)
                 self.caches[elf]['cache'].update(batchAddr2line(elf, list(range(start, end + 1))))
 
@@ -240,21 +240,27 @@ class sampleParser:
                     path = f"{searchPath}/{label}"
                     if (os.path.isfile(path)):
                         readelf = subprocess.run(f"readelf -h {path}", shell=True, stdout=subprocess.PIPE)
+                        readelfsection = subprocess.run(f"readelf -lW {path} 2>/dev/null | awk '$0 ~ /LOAD.+ R.E 0x/ {{print $3\":\"$6}}'", shell=True, stdout=subprocess.PIPE)
                         try:
                             readelf.check_returncode()
+                            readelfsection.check_returncode()
                             static = True if re.search("Type:[ ]+EXEC", readelf.stdout.decode('utf-8'), re.M) else False
+                            offset = int(readelfsection.stdout.decode('utf-8').split('\n')[:-1][0].split(":")[0], 0)
                             found = True
                             break
                         except Exception as e:
                             pass
 
                 if found:
+                    # Not seen so far but a binary could have multiple code sections which wouldn't work with that structure so far:
+                    # print(f"Using offset {offset:x} for {label}")
                     self.binaries.append({
                         'binary': label,
                         'path': path,
                         'kernel': False,
                         'skewed': False,
                         'static': static,
+                        'offset': offset,
                         'start': addr,
                         'size': size,
                         'end': addr + size
@@ -290,6 +296,7 @@ class sampleParser:
             'static': False,
             'skewed': False,
             'start': kstart,
+            'offset': 0,
             'size': self.kallsyms[-1][0] - kstart,
             'end': self.kallsyms[-1][0]
         })
@@ -332,7 +339,11 @@ class sampleParser:
 
         binary = self.getBinaryFromPC(pc)
         if binary is not False:
-            srcpc = pc if binary['static'] else pc - binary['start']
+            # Static pc is used as is
+            # dynamic pc points into a virtual memory range which was mapped according to the vmmap
+            # the binary on e.g. x86 are typically mapped using an offset to the actual code section
+            # in the binary meaning the read pc value must be treated with the offset for correlation
+            srcpc = pc if binary['static'] else (pc - binary['start']) + binary['offset']
             srcbinary = binary['binary']
 
             if binary['kernel']:

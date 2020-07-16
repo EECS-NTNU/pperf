@@ -104,7 +104,7 @@ for line in perf.stdout:
         sampleTime = int(sampleStat[1], 0)
         sampleOffset = int(sampleStat[2], 0)
 
-    if (sampleTime is 0):
+    if (sampleTime == 0):
         continue
 
     sampleSource = None
@@ -142,13 +142,13 @@ for line in perf.stdout:
         print(f"ERROR: could not detect sample type: {line}")
         sys.exit(1)
 
-    if args.vmmap and sampleType is 'PERF_RECORD_MMAP':
+    if args.vmmap and sampleType == 'PERF_RECORD_MMAP':
         if (targetParentId is None and not args.target) or (args.target and sampleMmapTarget == args.target):
             targetParentId = sampleParentId
         if targetParentId == sampleParentId:
             vmmapFile.write(f'0x{sampleMmapBaseAddr:016x} 0x{sampleMmapLength:016x} {sampleMmapTarget}\n')
 
-    if sampleType is 'PERF_RECORD_SAMPLE':
+    if sampleType == 'PERF_RECORD_SAMPLE':
         if sampleCpu not in seenCpus:
             seenCpus.append(sampleCpu)
         samples.append([sampleTime, sampleCpu, samplePc])

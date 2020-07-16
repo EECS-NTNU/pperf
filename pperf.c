@@ -355,7 +355,7 @@ int main(int const argc, char **argv) {
         char *endptr;
         int c;
         int option_index = 0;
-        size_t len = 0;
+        size_t len = 0; (void) len;
         unsigned int aLen;
 
         c = getopt_long (argc, argv, short_options, long_options, &option_index);
@@ -825,7 +825,6 @@ int main(int const argc, char **argv) {
         fprintf(stderr, "No process map was read, process exit was not reported!\n");
         ret = 1; goto exit;
     }
-
     if (output != NULL) {
         //Write VMMap
         fwrite((void *) processMap.maps, sizeof(struct VMMap), processMap.count, output);
