@@ -2,6 +2,7 @@
 #include <string.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <libgen.h>
 
 #define VMMAP_LABEL_LENGTH 255
 #define STRINGIFY_EVAL(x) #x
@@ -22,35 +23,51 @@ struct VMMaps getProcessVMMaps(pid_t pid, unsigned int const limit) {
     unsigned int allocCount = 1;
     struct VMMap map = {};
     struct VMMaps result = {};
-    char cmd[1024];
-    char buf[1024];
-    if (snprintf(cmd,1024,"pmap -q -d %d | awk '$3 ~ /x/ && $5 != \"000:00000\" {print \"0x\"$1\" \"$2\" \"$6}'", pid) <= 0) {
-        printf("early\n");
+    char procmap[256];
+
+    if (snprintf(procmap, 256,"/proc/%d/maps", pid) <= 0) {
+        fprintf(stderr, "/proc/%d/maps did not fit into buffer\n", pid);
         return result;
     }
-    FILE *ps = popen(cmd, "r");
-    while (fgets(buf, sizeof(buf), ps) != NULL) {
-        if (sscanf(buf,"%lx %lu %"STRINGIFY(VMMAP_LABEL_LENGTH)"s", &map.addr, &map.size, map.label) == 3) {
-            if (result.count == 0) {
-                result.maps = (struct VMMap *) malloc(allocCount * sizeof(struct VMMap));
-            } else if (allocCount <= result.count) {
-                allocCount *= 2;
-                result.maps = (struct VMMap *) realloc(result.maps, allocCount * sizeof(struct VMMap));
+    FILE *pmap = fopen(procmap, "r");
+    while (!feof(pmap)) {
+        uint64_t saddr = 0, eaddr = 0, offset = 0;
+        char ex = '\0';
+        char path[1024] = {};
+        char *filename;
+        int res;
+
+        res = fscanf(pmap, "%lx-%lx %*c%*c%c%*c %lx %*[^ ] %*[^ ] %1024s\n", &saddr, &eaddr, &ex, &offset, path);
+        // Just continue if we have found all 5 values
+        if (res == 5) {
+            filename = basename(path);
+            // check for execute bit and ignore special files/decives
+            if (ex == 'x' && !(filename[0] == '[' && filename[strlen(filename) - 1] == ']')) {
+                map.addr = saddr;
+                map.size = eaddr - saddr;
+                memcpy(map.label, filename, strlen(filename));
+                if (result.count == 0) {
+                    result.maps = (struct VMMap *) malloc(allocCount * sizeof(struct VMMap));
+                } else if (allocCount <= result.count) {
+                    allocCount *= 2;
+                    result.maps = (struct VMMap *) realloc(result.maps, allocCount * sizeof(struct VMMap));
+                }
+                if (result.maps == NULL) {
+                    fprintf(stderr, "VMmap buffer allocation failed!");
+                    break;
+                }
+
+                memcpy((void *) &result.maps[result.count], (void *) &map, sizeof(struct VMMap));
+                result.count++;
+                if (limit == result.count) break;
+                memset((void *) &map, '\0', sizeof(struct VMMap));
             }
-            if (result.maps == NULL) {
-                printf("mem\n");
-                break;
-            }
-            //kilobyte to byte
-            map.size *= 1024;
-            memcpy((void *) &result.maps[result.count], (void *) &map, sizeof(struct VMMap));
-            result.count++;
-            if (limit == result.count) break;
-            memset((void *) &map, '\0', sizeof(struct VMMap));
+        } else {
+            // Discard invalid line
+            res = fscanf(pmap, "%*[^\n]\n");
         }
     }
-    pclose(ps);
-
+    fclose(pmap);
     if (result.maps == NULL) {
         result.count = 0;
         return result;
