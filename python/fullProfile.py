@@ -11,6 +11,7 @@ from plotly.subplots import make_subplots
 import numpy
 import profileLib
 import gc
+from xopen import xopen
 
 plotly.io.templates.default = 'plotly_white'
 
@@ -44,10 +45,7 @@ aggregateKeys = [aggregateKeyNames.index(x) for x in args.aggregate_keys.split('
 print("Reading profile... ", end="")
 sys.stdout.flush()
 
-if args.profile.endswith(".bz2"):
-    profile = pickle.load(bz2.BZ2File(args.profile, mode="rb"))
-else:
-    profile = pickle.load(open(args.profile, mode="rb"))
+profile = pickle.load(xopen(args.profile, mode="rb"))
 
 print("finished")
 
@@ -94,13 +92,10 @@ powers = samples[:, 0:1].flatten()
 times = samples[:, 1:2].flatten()
 
 if (args.csv_power):
-    if (args.csv_power.endswith('.bz2')):
-        csvFile = bz2.open(args.csv_power, "wt")
-    else:
-        csvFile = open(args.csv_power, "w")
+    csvFile = xopen(args.csv_power, "w")
     csvFile.write('Time\tPower\n')
     for time, power in zip(times, powers):
-        csvFile.write(f'{time}\t{power}\n')
+        csvFile.write(f'{time:.16f}\t{power}\n')
     csvFile.close()
 
 
@@ -136,16 +131,13 @@ for index, sample in enumerate(samples):
 
 if args.csv_gantt_threads:
     ganttThreadMap = {}
-    if (args.csv_gantt_threads.endswith('.bz2')):
-        csvFile = bz2.open(args.csv_gantt_threads, "wt")
-    else:
-        csvFile = open(args.csv_gantt_threads, "w")
+    csvFile = xopen(args.csv_gantt_threads, "w")
     csvFile.write('_thread\tTime\t_offset\t_label\n')
     for s, time in enumerate(times):
         for t, _ in enumerate(threadDisplay):
             if (t in ganttThreadMap) and (ganttThreadMap[t]['label'] != threadDisplay[t][s]):
                 if (ganttThreadMap[t]['label'] is not None):
-                    csvFile.write(f"{t}\t{time - ganttThreadMap[t]['time']}\t{ganttThreadMap[t]['time']}\t{ganttThreadMap[t]['label']}\n")
+                    csvFile.write(f"{t}\t{time - ganttThreadMap[t]['time']:.16f}\t{ganttThreadMap[t]['time']:.16f}\t{ganttThreadMap[t]['label']}\n")
                 ganttThreadMap[t]['time'] = time
                 ganttThreadMap[t]['label'] = threadDisplay[t][s]
             elif (t not in ganttThreadMap) and (threadDisplay[t][s] is not None):
@@ -154,10 +146,7 @@ if args.csv_gantt_threads:
 
 
 if args.csv_threads:
-    if (args.csv_threads.endswith('.bz2')):
-        csvFile = bz2.open(args.csv_threads, "wt")
-    else:
-        csvFile = open(args.csv_threads, "w")
+    csvFile = xopen(args.csv_threads, "w")
     csvFile.write('Time')
     for t, _ in enumerate(threadDisplay):
         csvFile.write(f'\tThread_{t}')

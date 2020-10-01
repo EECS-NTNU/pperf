@@ -9,7 +9,7 @@ import textwrap
 import tabulate
 import profileLib
 import gc
-
+import xopen
 
 aggregateKeyNames = ["pc", "binary", "file", "procedure_mangled", "procedure", "line"]
 
@@ -128,10 +128,7 @@ avgSampleTime = 0
 i = 1
 for fileProfile in args.profiles:
     profile = {}
-    if fileProfile.endswith(".bz2"):
-        profile = pickle.load(bz2.BZ2File(fileProfile, mode="rb"))
-    else:
-        profile = pickle.load(open(fileProfile, mode="rb"))
+    profile = pickle.load(xopen.open(fileProfile, mode="rb"))
 
     if i == 1 and 'version' in profile and profile['version'] == profileLib.aggProfileVersion and len(args.profiles) == 1:
         aggregatedProfile = profile
@@ -422,10 +419,7 @@ if (args.plot) or (args.export):
     gc.collect()
 
 if (args.output):
-    if args.output.endswith("bz2"):
-        output = bz2.BZ2File(args.output, "wb")
-    else:
-        output = open(args.output, "wb")
+    output = xopen.open(args.output, "wb")
     pickle.dump(aggregatedProfile, output, pickle.HIGHEST_PROTOCOL)
     print(f"Aggregated profile saved to {args.output}")
 

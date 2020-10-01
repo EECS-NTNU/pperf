@@ -9,6 +9,7 @@ import csv
 import profileLib
 import time
 import datetime
+import xopen
 
 profile = {
     'version': profileLib.profileVersion,
@@ -85,10 +86,7 @@ sampleParser.addSearchPath(args.search_path)
 print("Opening csv... ", end="")
 sys.stdout.flush()
 
-if args.csv.endswith(".bz2"):
-    csvFile = bz2.open(args.csv, "rt")
-else:
-    csvFile = open(args.csv, "r")
+csvFile = xopen.xopen(args.csv, "r")
 
 
 csvProfile = csv.reader(csvFile, delimiter=";")
@@ -206,7 +204,7 @@ for sample in csvProfile:
     else:
         processedSample = []
         for cpu in useCpus:
-            pc = int(sample[pcColumns[cpu]])
+            pc = int(sample[pcColumns[cpu]], 0)
             processedSample.append([cpu, wallTime - prevTime, sampleParser.parseFromPC(pc)])
 
     prevTime = wallTime
@@ -226,10 +224,7 @@ print("\nPost processing... finished!")
 
 print(f"Writing {args.output}... ", end="")
 sys.stdout.flush()
-if args.output.endswith(".bz2"):
-    outProfile = bz2.BZ2File(args.output, mode='wb')
-else:
-    outProfile = open(args.output, mode="wb")
+outProfile = xopen.xopen(args.output, mode="wb")
 pickle.dump(profile, outProfile, pickle.HIGHEST_PROTOCOL)
 outProfile.close()
 
