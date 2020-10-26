@@ -8,15 +8,21 @@ import hashlib
 import pickle
 import pathlib
 from filelock import FileLock
+from datetime import datetime
 import tempfile
+import pkgutil
+import encodings
+import csv
+from copy import copy
 
 LABEL_UNKNOWN = '_unknown'
 LABEL_FOREIGN = '_foreign'
-LABEL_KERNEL = '_kernel'
+LABEL_KERNEL  = '_kernel'
+LABEL_UNSUPPORTED = '_unsupported'
 
-aggProfileVersion = 'a0.7'
+cacheVersion = 'c0.2'
+aggProfileVersion = 'a0.6'
 profileVersion = '0.5'
-cacheVersion = '0.1'
 
 aggTime = 0
 aggPower = 1
@@ -25,12 +31,23 @@ aggSamples = 3
 aggExecs = 4
 aggLabel = 5
 
-disableInlineUnwinding = False if 'UNWIND_INLINE' not in os.environ else (True if os.environ['UNWIND_INLINE'] == '0' else False)
-disableCache = True if disableInlineUnwinding else (False if 'DISABLE_CACHE' not in os.environ else (True if os.environ['DISABLE_CACHE'] == '1' else False))
+unwindInline = False if 'UNWIND_INLINE' in os.environ and os.environ['UNWIND_INLINE'] == '0' else True
+disableCache = True if 'DISABLE_CACHE' in os.environ and os.environ['DISABLE_CACHE'] == '1' else False
 crossCompile = "" if 'CROSS_COMPILE' not in os.environ else os.environ['CROSS_COMPILE']
-_cppfiltCache = {}
 _toolchainVersion = False
 
+
+class SAMPLE:
+    pc          = 0 # int
+    binary      = 1 # str
+    file        = 2 # str
+    function    = 3 # str
+    basicblock  = 4 # str
+    line        = 5 # int
+    instruction = 6 # str
+    meta        = 7 # int
+    names = ['pc', 'binary', 'file', 'function', 'basicblock', 'line', 'instruction', 'meta']
+    invalid = [None, None, None, None, None, None, None]
 
 def getToolchainVersion():
     global _toolchainVersion
@@ -42,6 +59,15 @@ def getToolchainVersion():
     _toolchainVersion = crossCompile + addr2line.stdout.decode('utf-8').split('\n')[0]
     return _toolchainVersion
 
+
+def getElfArchitecture(elf: str):
+    readelf = subprocess.run(f'readelf -h {elf}', shell=True, stdout=subprocess.PIPE)
+    readelf.check_returncode()
+    for line in readelf.stdout.decode('utf-8').split('\n'):
+        line=line.strip()
+        if line.startswith('Machine:'):
+            return line.split(':', 1)[1].strip()
+    return None
 
 def parseRange(stringRange):
     result = []
@@ -55,77 +81,26 @@ def parseRange(stringRange):
             result.append(a)
     return result
 
-
-def demangleFunction(function):
-    global _cppfiltCache
-    global crossCompile
-    if function in _cppfiltCache:
-        return _cppfiltCache[function]
-    cppfilt = subprocess.run(f"{crossCompile}c++filt -i '{function}'", shell=True, stdout=subprocess.PIPE)
-    cppfilt.check_returncode()
-
-    _cppfiltCache[function] = cppfilt.stdout.decode('utf-8').split("\n")[0]
-    return _cppfiltCache[function]
-
-
-def decodeAddr2Line(output, demangle=True):
-    lines = output.split('\n')
-    while len(lines[-1]) == 0:
-        lines.pop()
-    if (len(lines) < 3):
-        raise Exception('addr2line output malformed!')
-    address = int(lines[0], 0)
-    function = LABEL_UNKNOWN if lines[-2] == '??' else lines[-2]
-    demangled = function
-    if (demangle and demangled != LABEL_UNKNOWN):
-        demangled = demangleFunction(demangled)
-    location = lines[-1].split(' ')[0].split(':')
-    sourcefile = LABEL_UNKNOWN if location[0] == '??' else location[0]
-    sourceline = 0 if location[1] == '?' else int(location[1])
-    return {
-        'address': address,
-        'function': function,
-        'demangled': demangled,
-        'sourcefile': sourcefile,
-        'sourceline': sourceline
+class elfCache:
+    # Basic Block Reconstruction:
+    # currently requires support through dynamic branch analysis which
+    # provides a csv with dynamic branches and their targets to accuratly
+    # reconstruct basic blocks
+    # AArch64 - Stable
+    # RISC-V  - Experimental
+    archBranches = {
+        'AArch64': {
+            # These instruction divert the control flow of the application
+            'all' : {'b', 'b.eq', 'b.ne', 'b.cs', 'b.hs', 'b.cc', 'b.lo', 'b.mi', 'b.pl', 'b.vs', 'b.vc', 'b.hi', 'b.ls', 'b.ge', 'b.lt', 'b.gt', 'b.le', 'b.al', 'b.nv', 'bl', 'br', 'blr', 'svc', 'brk', 'ret', 'cbz', 'cbnz', 'tbnz'},
+            # These instructions are dynamic branches that can only divert control flow towards a function or after a branch instruction
+            'remote' : {'svc', 'brk', 'blr', 'ret'},
+        },
+        'RISC-V': {
+            'all' : {'j', 'jal', 'jr', 'jalr', 'ret', 'call', 'tail', 'bne', 'beq', 'blt', 'bltu', 'bge', 'bgeu', 'beqz', 'bnez', 'blez', 'bgez', 'bltz', 'bgtz', 'bgt', 'ble', 'bgtu', 'bleu', 'ecall', 'ebreak', 'scall', 'sbreak'},
+            'remote' : {'ebreak', 'ecall', 'sbreak', 'scall', 'jalr', 'ret'},
+        }
     }
 
-
-def batchAddr2line(elf, pcs, demangle=True):
-    global crossCompile
-    tmpFile, tmpFilename = tempfile.mkstemp()
-    result = {}
-    try:
-        with os.fdopen(tmpFile, 'w') as tmp:
-            for pc in pcs:
-                tmp.write(f"0x{pc:x}\n")
-        addr2line = subprocess.run(f"{crossCompile}addr2line -fsai -e {elf} @{tmpFilename}", shell=True, stdout=subprocess.PIPE)
-        addr2line.check_returncode()
-        parsed = addr2line.stdout.decode('utf-8').split("\n0x")
-        first = True
-        for x in parsed:
-            x = x if first else '0x' + x
-            first = False
-            decoded = decodeAddr2Line(x, demangle)
-            result[decoded['address']] = [decoded['sourcefile'], decoded['function'], decoded['demangled'], decoded['sourceline']]
-    finally:
-        os.remove(tmpFilename)
-
-    return result
-
-
-def addr2line(elf, pc, demangle=True):
-    global crossCompile
-    global disableInlineUnwinding
-    inlineOption = 'i' if not disableInlineUnwinding else ''
-    addr2line = subprocess.run(f"{crossCompile}addr2line -fsa{inlineOption} -e {elf} {pc:x}", shell=True, stdout=subprocess.PIPE)
-    addr2line.check_returncode()
-    decoded = decodeAddr2Line(addr2line.stdout.decode('utf-8'), demangle)
-    return [decoded['sourcefile'], decoded['function'], decoded['demangled'], decoded['sourceline']]
-
-
-# Work in Progress
-class elfCache:
     cacheFolder = str(pathlib.Path.home()) + "/.cache/pperf/"
 
     caches = {}
@@ -133,80 +108,392 @@ class elfCache:
     def __init__(self):
         if not os.path.isdir(self.cacheFolder):
             os.makedirs(self.cacheFolder)
-
-    def getDataFromPC(self, elf, pc):
-        if elf not in self.caches:
-            self.openOrCreateCache(elf)
-        if pc not in self.caches[elf]['cache']:
-            print(f"WARNING: 0x{pc:x} does not exist in cache for file {elf}", file=sys.stderr)
-            return addr2line(elf, pc)
-        else:
-            return self.caches[elf]['cache'][pc]
-
-    def openOrCreateCache(self, elf):
-        global cacheVersion
-        cacheName = self.getCacheName(elf)
-        lock = FileLock(cacheName + ".lock")
-        lock.acquire()
-        if os.path.isfile(cacheName):
-            lock.release()
-            try:
-                self.caches[elf] = pickle.load(open(cacheName, mode="rb"))
-            except Exception:
-                os.remove(cacheName)
-                self.openOrCreateCache(elf)
-            if 'version' not in self.caches[elf] or self.caches[elf]['version'] != cacheVersion:
-                raise Exception(f"Wrong version of cache for {elf} located at {cacheName}!")
-            if self.caches[elf]['toolchain'] != getToolchainVersion():
-                raise Exception(f"Toolchain version of cache for {elf} located at {cacheName} does not match")
-        else:
-            self.caches[elf] = {'version': cacheVersion, 'toolchain': getToolchainVersion(), 'cache': {}}
-            readelf = subprocess.run(f"readelf -lW {elf} 2>/dev/null | awk '$0 ~ /LOAD.+ R.E 0x/ {{print $3\":\"$6}}'", shell=True, stdout=subprocess.PIPE)
-            readelf.check_returncode()
-            maps = readelf.stdout.decode('utf-8').split('\n')[:-1]
-            for map in maps:
-                start = int(map.split(":")[0], 0)
-                end = int(map.split(":")[1], 0) + start
-                print(f"\rCreating address cache for {elf} from 0x{start:x} to 0x{end:x}...", file=sys.stderr)
-                self.caches[elf]['cache'].update(batchAddr2line(elf, list(range(start, end + 1))))
-
-            pickle.dump(self.caches[elf], open(cacheName, "wb"), pickle.HIGHEST_PROTOCOL)
-            lock.release()
-
+           
     def getCacheName(self, elf):
-        global crossCompile
+        global unwindInline
         hasher = hashlib.md5()
         with open(elf, 'rb') as afile:
             hasher.update(afile.read())
-        return self.cacheFolder + '/elfcache_' + hasher.hexdigest()
+        return f"{self.cacheFolder}/{os.path.basename(elf)}_{'i' if unwindInline else ''}{hasher.hexdigest()}"
+
+    def openOrCreateCache(self, elf: str):
+        global disableCache
+        if not self.cacheAvailable(elf):
+            if disableCache:
+                print(f"WARNING: cache disabled, construct limited in memory cache", file=sys.stderr)
+                self.createCache(elf, verbose=False)
+            else:
+                raise Exception(f'could not find cache for file {elf}, please create first or run with disabled cache')
+       
+    def getSampleFromPC(self, elf : str, pc : int):
+        self.openOrCreateCache(elf)
+        if pc not in self.caches[elf]['cache']:
+            print(f"WARNING: 0x{pc:x} does not exist in cache of file {elf}", file=sys.stderr)
+            # Construct a sample that belongs to this binary but with no further informations
+            sample = copy(SAMPLE.invalid)
+            sample[SAMPLE.pc] = pc
+            sample[SAMPLE.binary] = self.caches[elf]['name']
+            return sample
+        else:
+            return self.caches[elf]['cache'][pc]
+
+    def getSource(self, elf : str , file: str):
+        self.openOrCreateCache(elf)
+        if file in self.caches[elf]['source']:
+            return self.caches[elf]['source'][file]
+        return None
+
+    def getAsm(self, elf : str):
+        self.openOrCreateCache(elf)
+        return self.caches[elf]['asm']
+
+    def cacheAvailable(self, elf : str, load = True):
+        if elf in self.caches:
+            return True
+        global disableCache
+        if disableCache:
+            return False
+        global cacheVersion
+        cacheName = self.getCacheName(elf)
+        lock = FileLock(cacheName + ".lock")
+        # If the lock is held this will stall
+        lock.acquire()
+        lock.release()
+        if os.path.isfile(cacheName):
+            cache = pickle.load(open(cacheName, mode="rb"))
+            if 'version' not in cache or cache['version'] != cacheVersion:
+                raise Exception(f"wrong version of cache for {elf} located at {cacheName}!")
+            if cache['toolchain'] != getToolchainVersion():
+                raise Exception(f"toolchain version of cache for {elf} located at {cacheName} does not match")
+            if load:
+                self.caches[elf] = cache
+            return True
+        else:
+            return False
+
+    def createCache(self, elf : str, name = None, sourceSearchPaths = [], dynmapfile = None, includeSource = True, basicblockReconstruction = True, verbose = True):
+        global cacheVersion
+        global crossCompile
+        global unwindInline
+        global disableCache
+
+        if name is None:
+            name = os.path.basename(elf)
+
+        if not disableCache:
+            cacheName = self.getCacheName(elf)
+            lock = FileLock(cacheName + ".lock")
+            lock.acquire()
+
+            # Remove the cache if it already exists
+            if os.path.isfile(cacheName):
+                os.remove(cacheName)
+
+        try:
+
+            # Basic Block Reconstruction
+            ADDRESS_NORMAL = 0
+            ADDRESS_BRANCH = 1
+            ADDRESS_TARGET = 2
+            ADDRESS_FHEAD  = 4
+
+            functionCounter = -1
+            basicblockCounter = 0
+           
+            cache = {
+                'version': cacheVersion,
+                'binary': os.path.basename(elf),
+                'name': name,
+                'arch': getElfArchitecture(elf),
+                'date': datetime.now(),
+                'toolchain': getToolchainVersion(),
+                'unwindInline': not unwindInline,
+                'cache' : {},
+                'source': {},
+                'asm': {}
+            }
+
+            if cache['arch'] not in self.archBranches and basicblockReconstruction:
+                basicblockReconstruction = False
+                if verbose:
+                    print(f"WARNING: disabling basic block reconstruction due to unknown architecture {cache['arch']}")
+
+            # First step is creating an object dump of the elf file
+            pObjdump = subprocess.run(f"{crossCompile}objdump -Cdz --prefix-addresses {elf}", shell=True, stdout=subprocess.PIPE)
+            pObjdump.check_returncode()
+            sObjdump = pObjdump.stdout.decode('utf-8')
+            # Remove trailing additional data that begins with '//'
+            sObjdump = re.sub('[ \t]+(// ).+\n','\n', sObjdump)
+            # Remove trailing additional data that begins with '#'
+            sObjdump = re.sub('[ \t]+(# ).+\n','\n', sObjdump)
+
+            for line in sObjdump.split('\n'):
+                objdumpInstruction = re.compile('([0-9a-fA-F]+) (<.+?(\+0x[0-9a-f-A-F]+)?> [^\t]+)(\t[^<]+)?(<.+>)?')
+                funcOffset = re.compile('^<(.+?)(\+0x[0-9a-f-A-F]+)?>$')
+                match0 = objdumpInstruction.match(line)
+                if match0:
+                    funcAndInstr = match0.group(2).rsplit(' ', 1)
+                    meta = ADDRESS_NORMAL
+                    match1 = funcOffset.match(funcAndInstr[0])
+                    if match1.group(2) is None:
+                        meta |= ADDRESS_FHEAD
+                        functionCounter += 1
+                    pc = int(match0.group(1), 16)
+                    sample = [pc, name, None, match1.group(1), f'f{functionCounter}', None, funcAndInstr[1], meta]
+                    cache['asm'][pc] = funcAndInstr[1]
+                    if match0.group(4) is not None:
+                        cache['asm'][pc] += '\t' + match0.group(4).strip()
+                    cache['cache'][pc] = sample
+
+            if (len(cache['cache']) == 0):
+                raise Exception(f'Could not parse any instructions from {elf}')
+
+            # Second Step, correlate addresses to function/files
+            tmpfile, tmpfilename = tempfile.mkstemp()
+            try:
+                addr2lineDecode = re.compile('^(0x[0-9a-fA-F]+)\n(.+?)\n(.+)?:(([0-9]+)|(\?)).*$')
+                with os.fdopen(tmpfile, 'w') as tmp:
+                    tmp.write('\n'.join(map(lambda x: f'0x{x:x}', cache['cache'].keys())) + '\n')
+                    tmp.close()
+                    pAddr2line = subprocess.run(f"{crossCompile}addr2line -Cafr{'i' if unwindInline else ''} -e {elf} @{tmpfilename}", shell=True, stdout=subprocess.PIPE)
+                    pAddr2line.check_returncode()
+                    sAddr2line = pAddr2line.stdout.decode('utf-8').split("\n0x")
+                    for entry in sAddr2line:
+                        matchEntry = (entry if entry.startswith('0x') else '0x' + entry).split('\n')
+                        while len(matchEntry) > 3 and len(matchEntry[-1]) == 0:
+                            matchEntry.pop()
+                        matchEntry = '\n'.join([matchEntry[0], matchEntry[-2], matchEntry[-1]])
+
+                        match = addr2lineDecode.match(matchEntry)
+                        if match:
+                            iAddr = int(match.group(1), 16)
+                            if iAddr not in cache['cache']:
+                                raise Exception(f'Got an unknown address from addr2line: {match.group(1)}')
+                            if match.group(3) is not None and len(match.group(3).strip('?')) != 0:
+                                cache['cache'][iAddr][SAMPLE.file] = match.group(3)
+                            if match.group(2) is not None and len(match.group(2).strip('?')) != 0:
+                                # If we do source correlation save the absolute path for the moment
+                                cache['cache'][iAddr][SAMPLE.function] = match.group(2)
+                            if match.group(4) is not None and len(match.group(4).strip('?')) != 0 and int(match.group(4)) != 0:
+                                cache['cache'][iAddr][SAMPLE.line] = int(match.group(4))
+                        else:
+                            raise Exception(f'Could not decode the following addr2line entry\n{entry}')
+            finally:
+                os.remove(tmpfilename)
+
+            # Third Step, read in source code
+            if includeSource:
+                modnames = set([modname for importer, modname, ispkg in pkgutil.walk_packages(path=[os.path.dirname(encodings.__file__)], prefix='')])
+                all_encodings = modnames.union(set(encodings.aliases.aliases.values()))
+
+                for pc in cache['cache']:
+                    if cache['cache'][pc][SAMPLE.file] is not None and cache['cache'][pc][SAMPLE.file] not in cache['source']:
+                        targetFile = None
+                        sourcePath = cache['cache'][pc][SAMPLE.file]
+                        searchPath = pathlib.Path(sourcePath)
+                        cache['source'][sourcePath] = None
+                        # Only save the basename
+                        if (os.path.isfile(sourcePath)):
+                            targetFile = sourcePath
+                        elif len(sourceSearchPaths) > 0:
+                            if searchPath.is_absolute():
+                                searchPath = pathlib.Path(*searchPath.parts[1:])
+                            found = False
+                            for search in sourceSearchPaths:
+                                while not found and len(searchPath.parts) > 0:
+                                    if os.path.isfile(search / searchPath):
+                                        targetFile = search / searchPath
+                                        found=True
+                                    searchPath = pathlib.Path(*searchPath.parts[1:])
+                                if not found:
+                                    if verbose:
+                                        print(f"WARNING: could not find source code for {os.path.basename(sourcePath)}", file=sys.stderr)
+
+                        if targetFile is not None:
+                            decoded = False
+                            for enc in all_encodings:
+                                try:
+                                    with open(targetFile, 'r', encoding=enc) as fp:
+                                        cache['source'][sourcePath] = []
+                                        for i, line in enumerate(fp):
+                                            cache['source'][sourcePath].append(line.strip('\r\n'))
+                                    decoded=True
+                                    break
+                                except Exception:
+                                    pass
+                            if not decoded:
+                                cache['source'][sourcePath] = None
+                                raise Exception(f"WARNING: could not decode source code {localFileCache[sourcePath][0]}")
+
+            # Fourth Step, basic block reconstruction
+            if basicblockReconstruction:
+                # If a dynmap file is provided, read it in and add the dynamic branch informations
+                dynmap = {}
+                if dynmapfile is None and os.path.isfile(elf + '.dynmap'):
+                    dynmapfile = elf + '.dynmap'
+                if dynmapfile is not None and os.path.isfile(dynmapfile):
+                    try:
+                        with open(dynmapfile, "r") as fDynmap:
+                            csvDynmap = csv.reader(fDynmap)
+                            for row in csvDynmap:
+                                try:
+                                    fromPc = int(row[0], 0)
+                                    toPc = int(row[1], 0)
+                                except:
+                                    continue
+                                if fromPc not in dynmap:
+                                    dynmap[fromPc] = [toPc]
+                                else:
+                                    dynmap[fromPc].append(toPc)
+                    except:
+                        if verbose:
+                            print(f"WARNING: could not read dynamic branch information from {dynmapfile}", file=sys.stderr)
+
+                pcs = sorted(cache['cache'].keys())
+                # First pass to identify branches
+                for pc in cache['cache']:
+                    instruction = cache['cache'][pc][SAMPLE.instruction].lower()
+                    if instruction in self.archBranches[cache['arch']]['all']:
+                        cache['cache'][pc][SAMPLE.meta] |= ADDRESS_BRANCH
+                        asm = cache['asm'][pc].split('\t', 1)
+                        if instruction not in self.archBranches[cache['arch']]['remote'] and len(asm) == 2:
+                            branched = False
+                            for argument in reversed(asm[1].split(',')):
+                                try:
+                                    branchTarget = int(argument.strip(), 16)
+                                    if branchTarget in cache['cache']:
+                                        cache['cache'][branchTarget][SAMPLE.meta] |= ADDRESS_TARGET
+                                        branched = True
+                                        break
+                                    else:
+                                        print(f'WARNING: branch target not within file 0x{branchTarget:x}')
+                                except:
+                                    pass
+                            if not branched and verbose:
+                                # Might be a branch that has dynmap information or comes from the plt
+                                if pc not in dynmap and not (cache['cache'][pc][SAMPLE.function].endswith('.plt') or cache['cache'][pc][SAMPLE.function].endswith('@plt')):
+                                    print(f"WARNING: dynamic branch might not be resolved at 0x{pc:x}: {cache['asm'][pc]}", file=sys.stderr)
+
+                # Parse dynmap to complete informations
+                newBranchTargets = 0
+                knownBranchTargets = 0
+                for pc in dynmap:
+                    if pc not in cache['cache']:
+                        raise Exception('address 0x{pc:x} from dynamic branch informations is unknown')
+                    if verbose and not cache['cache'][pc][SAMPLE.meta] & ADDRESS_BRANCH:
+                        print(f"WARNING: dynamic branch information provided an unknown branch at 0x{pc:x}: {cache['asm'][pc]}", file=sys.stderr)
+                    cache['cache'][pc][SAMPLE.meta] |= ADDRESS_BRANCH
+                    for target in dynmap[pc]:
+                        if target not in cache['cache']:
+                            raise Exception('address 0x{target:x} from dynamic branch informations is unknown')
+                        if not cache['cache'][target][SAMPLE.meta] & ADDRESS_TARGET and not cache['cache'][target][SAMPLE.meta] & ADDRESS_FHEAD:
+                            newBranchTargets += 1
+                            if verbose:
+                                print(f"INFO: new dynamic branch taget 0x{target:x}", file=sys.stderr)
+                        else:
+                            knownBranchTargets += 1
+                            if verbose:
+                                print(f"INFO: dynamic branch taget 0x{target:x} is already known", file=sys.stderr)
+                        cache['cache'][target][SAMPLE.meta] |= ADDRESS_TARGET
+                if verbose and newBranchTargets > 0:
+                    print(f"INFO: {newBranchTargets} new branch targets were identified with dynamic branch information", file=sys.stderr)
+                if verbose and knownBranchTargets > 0:
+                    print(f"INFO: {knownBranchTargets} branch targets from dynamic branch information were already known", file=sys.stderr)
+
+                # Second pass to resolve the basic blocks
+                basicblockCount = 0
+                for pc in cache['cache']:
+                    meta = cache['cache'][pc][SAMPLE.meta]
+                    if meta & ADDRESS_FHEAD:
+                        basicblockCount = 0
+                    elif meta & ADDRESS_TARGET:
+                        basicblockCount += 1
+                    cache['cache'][pc][SAMPLE.basicblock] += f'b{basicblockCount}'
+                    if meta & ADDRESS_BRANCH:
+                        basicblockCount += 1
+            if not disableCache:
+                pickle.dump(cache, open(cacheName, "wb"), pickle.HIGHEST_PROTOCOL)
+            self.caches[elf] = cache
+        finally:
+            if not disableCache:
+                lock.release()
+
+
+class listmapper:
+    maps = {}
+
+    def __init__(self, mapping = None):
+        if mapping is not None:
+            self.addMaping(mapping)
+   
+    def removeMapping(self, mapping):
+        if isinstance(mapping, list):
+            for m in mapping:
+                if not isinstance(m, int):
+                    raise Exception('class listmapper must be used with integer maps')
+                if m in self.maps:
+                    unset(self.maps[m])
+        elif isinstance(mapping, int):
+            raise Exception('class listmapper must be used with integer maps')
+        elif mapping in self.maps:
+            unset(self.maps[mapping])
+
+    def addMaping(self, mapping):
+        if isinstance(mapping, list):
+            for m in mapping:
+                if not isinstance(m, int):
+                    raise Exception('class listmapper must be used with integer maps')
+                if m not in self.maps:
+                    self.maps[m] = []
+        elif isinstance(m, int):
+            raise Exception('class listmapper must be used with integer maps')
+        elif mapping not in self.maps:
+            self.maps[mapping] = []
+   
+    def mapValues(self, values: list):
+        mapped = []
+        for i, val in enumerate(values):
+            if i in self.maps:
+                if val not in self.maps[i]:
+                    self.maps[i].append(val)
+                mapped.append(self.maps[i].index(val))
+            else:
+                mapped.append(val)
+        return mapped
+
+    def remapValues(self, values: list):
+        remapped = []
+        for i, val in enumerate(values):
+            if i in self.maps:
+                if not isinstance(val, int) or val >= len(self.maps[i]):
+                    raise Exception(f'listmapper invalid remap request for value {val} in map {i}')
+                remapped.append(self.maps[i][val])
+            else:
+                remapped.append(val)
+        return remapped
+
+    def setMaps(self, maps : dict):
+        self.maps = maps
+
+    def retrieveMaps(self):
+        return self.maps
 
 
 class sampleParser:
-    useDemangling = True
+    cache = elfCache()
+    # Mapper will compress the samples down to a numeric list
+    mapper = listmapper([SAMPLE.binary, SAMPLE.file, SAMPLE.function, SAMPLE.basicblock, SAMPLE.instruction])
+    sources = {}
+    asms = {}
+
     binaries = []
     kallsyms = []
-    binaryMap = []
-    functionMap = []
-    _functionMap = []
-    fileMap = []
     searchPaths = []
-    _fetched_pc_data = {}
-    cache = None
 
-    def __init__(self, labelUnknown=LABEL_UNKNOWN, labelForeign=LABEL_FOREIGN, labelKernel=LABEL_KERNEL, useDemangling=True, pcHeuristic=False):
-        global disableCache
-        self.binaryMap = [labelUnknown, labelForeign]
-        self.functionMap = [[labelUnknown, labelUnknown], [labelForeign, labelForeign]]
-        self._functionMap = [x[0] for x in self.functionMap]
-        self.fileMap = [labelUnknown, labelForeign]
-        self.useDemangling = useDemangling
-        self.LABEL_KERNEL = labelKernel
-        self.LABEL_UNKNOWN = labelUnknown
-        self.LABEL_FOREIGN = labelForeign
-        self.searchPaths = []
-        self._fetched_pc_data = {}
-        self._pc_heuristic = pcHeuristic
-        self.cache = elfCache() if not disableCache else None
+    _localSampleCache = {}
+
+    def __init__(self):
+        pass
 
     def addSearchPath(self, path):
         if not isinstance(path, list):
@@ -258,7 +545,6 @@ class sampleParser:
                         'binary': label,
                         'path': path,
                         'kernel': False,
-                        'skewed': False,
                         'static': static,
                         'offset': offset,
                         'start': addr,
@@ -294,7 +580,6 @@ class sampleParser:
             'path': '_kernel',
             'kernel': True,
             'static': False,
-            'skewed': False,
             'start': kstart,
             'offset': 0,
             'size': self.kallsyms[-1][0] - kstart,
@@ -303,24 +588,6 @@ class sampleParser:
 
         self.kallsyms = [[x - kstart, y] for (x, y) in self.kallsyms]
         self.kallsyms.reverse()
-
-    def enableSkewedPCAdjustment(self):
-        raise Exception("Don't use this!")
-        fakeHighBits = [0x55, 0x7f, 0xffffff80]
-        for binary in self.binaries:
-            if binary['skewed'] is False:
-                nbinary = binary.copy()
-                nbinary['skewed'] = True
-                laddr = binary['start'] & 0xffffffff
-                haddr = binary['start'] >> 32
-                for fakeHigh in fakeHighBits:
-                    if haddr != fakeHigh:
-                        nbinary['start'] = (fakeHigh << 32) | laddr
-                        nbinary['end'] = nbinary['start'] + nbinary['size']
-                        self.binaries.append(nbinary.copy())
-
-    def disableSkewedPCAdjustment(self):
-        self.binaries = [x for x in self.binaries if not x['skewed']]
 
     def isPCKnown(self, pc):
         if self.getBinaryFromPC(pc) is False:
@@ -333,132 +600,82 @@ class sampleParser:
                 return binary
         return False
 
-    def parseFromPC(self, pc):
-        if pc in self._fetched_pc_data:
-            return self._fetched_pc_data[pc]
+    def parsePC(self, pc):
+        if pc in self._localSampleCache:
+            return self._localSampleCache[pc]
 
         binary = self.getBinaryFromPC(pc)
+        sample = copy(SAMPLE.invalid)
         if binary is not False:
             # Static pc is used as is
             # dynamic pc points into a virtual memory range which was mapped according to the vmmap
             # the binary on e.g. x86 are typically mapped using an offset to the actual code section
             # in the binary meaning the read pc value must be treated with the offset for correlation
             srcpc = pc if binary['static'] else (pc - binary['start']) + binary['offset']
-            srcbinary = binary['binary']
 
             if binary['kernel']:
-                srcfunction = self.LABEL_UNKNOWN
-                srcdemangled = self.LABEL_UNKNOWN
-                srcfile = self.LABEL_UNKNOWN
-                srcline = 0
+                sample[SAMPLE.pc] = srcpc
+                sample[SAMPLE.binary] = binary['binary']
                 for f in self.kallsyms:
                     if f[0] <= srcpc:
-                        srcfunction = f[1]
-                        srcdemangled = f[1]
+                        sample[SAMPLE.function] = f[1]
                         break
             else:
-                srcfile, srcfunction, srcdemangled, srcline = addr2line(binary['path'], srcpc) if self.cache is None else self.cache.getDataFromPC(binary['path'], srcpc)
+                sample = self.cache.getSampleFromPC(binary['path'], srcpc)
+
+                if sample[SAMPLE.binary] not in self.sources:
+                    self.sources[sample[SAMPLE.binary]] = {}
+                if sample[SAMPLE.file] not in self.sources[sample[SAMPLE.binary]]:
+                    self.sources[sample[SAMPLE.binary]][sample[SAMPLE.file]] = self.cache.getSource(binary['path'], sample[SAMPLE.file])
+                if sample[SAMPLE.binary] not in self.asms:
+                    self.asms[sample[SAMPLE.binary]] = self.cache.getAsm(binary['path'])
         else:
-            srcpc = pc
-            srcbinary = self.LABEL_FOREIGN
-            srcfile = self.LABEL_FOREIGN
-            srcfunction = self.LABEL_FOREIGN
-            srcdemangled = self.LABEL_FOREIGN
-            srcline = 0
+            sample[SAMPLE.pc] = pc
 
-        if srcbinary not in self.binaryMap:
-            self.binaryMap.append(srcbinary)
-        if srcfunction not in self._functionMap:
-            self.functionMap.append([srcfunction, srcdemangled])
-            self._functionMap.append(srcfunction)
-        if srcfile not in self.fileMap:
-            self.fileMap.append(srcfile)
+        result = self.mapper.mapValues(sample)
 
-        result = [
-            srcpc,
-            self.binaryMap.index(srcbinary),
-            self.fileMap.index(srcfile),
-            self._functionMap.index(srcfunction),
-            srcline
-        ]
 
-        self._fetched_pc_data[pc] = result
+        self._localSampleCache[pc] = result
         return result
 
     def parseFromSample(self, sample):
-        if sample[1] not in self.binaryMap:
-            self.binaryMap.append(sample[1])
-        if sample[2] not in self.fileMap:
-            self.fileMap.append(sample[2])
-        if sample[3] not in self._functionMap:
-            self.functionMap.append([sample[3], sample[4]])
-            self._functionMap.append(sample[3])
+        return self.mapper.remapValues(sample)
 
-        result = [
-            sample[0],
-            self.binaryMap.index(sample[1]),
-            self.fileMap.index(sample[2]),
-            self._functionMap.index(sample[3]),
-            sample[5]
-        ]
-        return result
+    def getMaps(self):
+        return self.mapper.retrieveMaps()
 
-    def getBinaryMap(self):
-        return self.binaryMap
+    def getSources(self):
+        return self.sources
 
-    def getFunctionMap(self):
-        return self.functionMap
+    def getAsms(self):
+        return self.asms
 
-    def getFileMap(self):
-        return self.fileMap
-
+    def getName(self, binary):
+        self.cache.openOrCreateCache(binary)
+        return self.cache.caches[binary]['name']
 
 class sampleFormatter():
-    binaryMap = []
-    functionMap = []
-    fileMap = []
+    mapper = listmapper()
 
-    def __init__(self, binaryMap, functionMap, fileMap):
-        self.binaryMap = binaryMap
-        self.functionMap = functionMap
-        self.fileMap = fileMap
+    def __init__(self, maps):
+        self.mapper.setMaps(maps)
 
-    def getSample(self, data):
-        return [
-            data[0],
-            self.binaryMap[data[1]],
-            self.fileMap[data[2]],
-            self.functionMap[data[3]][0],
-            self.functionMap[data[3]][1],
-            data[4]
-        ]
-
-    def formatData(self, data, displayKeys=[1, 4], delimiter=":", doubleSanitizer=[LABEL_FOREIGN, LABEL_UNKNOWN, LABEL_KERNEL], lStringStrip=False, rStringStrip=False):
-        return self.sanitizeOutput(
-            self.formatSample(self.getSample(data), displayKeys, delimiter),
-            delimiter,
-            doubleSanitizer,
-            lStringStrip,
-            rStringStrip
-        )
-
-    def formatSample(self, sample, displayKeys=[1, 4], delimiter=":"):
-        return delimiter.join([f"0x{sample[x]:x}" if x == 0 else str(sample[x]) for x in displayKeys])
-
-    def sanitizeOutput(self, output, delimiter=":", doubleSanitizer=[LABEL_FOREIGN, LABEL_UNKNOWN, LABEL_KERNEL], lStringStrip=False, rStringStrip=False):
-        if doubleSanitizer is not False:
-            if not isinstance(doubleSanitizer, list):
-                doubleSanitizer = [doubleSanitizer]
-            for double in doubleSanitizer:
-                output = output.replace(f"{double}{delimiter}{double}", f"{double}")
-        if lStringStrip is not False:
-            if not isinstance(lStringStrip, list):
-                lStringStrip = [lStringStrip]
-            for lstrip in lStringStrip:
-                output = re.sub(r"^" + re.escape(lstrip), "", output).lstrip(delimiter)
-        if rStringStrip is not False:
-            if not isinstance(rStringStrip, list):
-                rStringStrip = [rStringStrip]
-            for rstrip in rStringStrip:
-                output = re.sub(re.escape(rstrip) + r"$", "", output).rstrip(delimiter)
-        return output
+    def remapSample(self, sample):
+        return self.mapper.remapValues(sample)
+       
+    def formatSample(self, sample, displayKeys=[SAMPLE.binary, SAMPLE.function], delimiter=":", labelNone = '_unknown'):
+        for i, k in enumerate(displayKeys):
+            valid = True
+            if isinstance(k, str):
+                if k not in SAMPLE.names:
+                    valid = False
+                else:
+                    displayKeys[i] = SAMPLE.names.index(k)
+            elif isinstance(k, int):
+                if i < 0 or i >= len(SAMPLE.names):
+                    valid = False
+            else:
+                valid = False
+            if not valid:
+                raise Exception(f'class sampleFormatter encountered unknown display key {k}')
+        return delimiter.join([f"0x{sample[x]:x}" if x == SAMPLE.pc else str(labelNone) if sample[x] is None else str(sample[x]) for x in displayKeys])

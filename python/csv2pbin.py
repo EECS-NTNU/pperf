@@ -107,11 +107,11 @@ if (args.vmmap):
 noBinaries = len(sampleParser.binaries) == 0
 
 if (noBinaries):
-    profile['name'] = args.name if args.name else '_unknown'
-    profile['target'] = '_unknown'
+    profile['name'] = args.name if args.name else profileLib.LABEL_UNKNOWN
+    profile['target'] = profileLib.LABEL_UNKNOWN
 else:
-    profile['name'] = args.name if args.name else sampleParser.binaries[0]['binary']
-    profile['target'] = sampleParser.binaries[0]['binary']
+    profile['name'] = args.name if args.name else sampleParser.getName(sampleParser.binaries[0]['binary'])
+    profile['target'] = sampleParser.getName(sampleParser.binaries[0]['binary'])
 
 if (args.kallsyms):
     sampleParser.loadKallsyms(args.kallsyms)
@@ -205,7 +205,7 @@ for sample in csvProfile:
         processedSample = []
         for cpu in useCpus:
             pc = int(sample[pcColumns[cpu]], 0)
-            processedSample.append([cpu, wallTime - prevTime, sampleParser.parseFromPC(pc)])
+            processedSample.append([cpu, wallTime - prevTime, sampleParser.parsePC(pc)])
 
     prevTime = wallTime
     profile['profile'].append([power, wallTime - startTime, processedSample])
@@ -216,9 +216,9 @@ del csvFile
 profile['samplingTime'] = wallTime - startTime
 profile['energy'] = cumEnergy
 profile['power'] = cumEnergy / profile['samplingTime']
-profile['binaries'] = sampleParser.getBinaryMap()
-profile['functions'] = sampleParser.getFunctionMap()
-profile['files'] = sampleParser.getFileMap()
+profile['maps'] = sampleParser.getMaps()
+profile['sources'] = sampleParser.getSources()
+profile['asms'] = sampleParser.getAsms()
 
 print("\nPost processing... finished!")
 

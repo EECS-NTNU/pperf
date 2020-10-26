@@ -11,11 +11,17 @@ import profileLib
 import gc
 from xopen import xopen
 
-aggregateKeyNames = ["pc", "binary", "file", "procedure_mangled", "procedure", "line"]
+aggregateDefault = [profileLib.SAMPLE.names[profileLib.SAMPLE.binary], profileLib.SAMPLE.names[profileLib.SAMPLE.function]]
 
 parser = argparse.ArgumentParser(description="Visualize profiles from intrvelf sampler.")
 parser.add_argument("profiles", help="postprocessed profiles from intrvelf", nargs="+")
-parser.add_argument("-a", "--aggregate-keys", help=f"aggregate after this list (%(default)s) e.g.: {','.join(aggregateKeyNames)}", default="binary,procedure")
+parser.add_argument("--mode", choices=['mean', 'add'], default='mean', help=f"compute mean or accumulated profiles (%(default)s)")
+parser.add_argument("-a", "--aggregate", help=f"aggregate symbols (default: %{', '.join(aggregateDefault)}s)", choices=profileLib.SAMPLE.names, nargs="+", default=[])
+parser.add_argument("-d", "--delimiter", help=f"aggregate symbol delimiter (default '%(default)s')", default=":")
+parser.add_argument("-ea", "--external-aggregate", help=f"aggregate external symbols (default: %{', '.join(aggregateDefault)}s)", choices=profileLib.SAMPLE.names, nargs="+", default=[])
+parser.add_argument("-ed", "--external-delimiter", help=f"delimiter for external symbols (default: ':')", default=None)
+
+parser.add_argument("--label-none", help=f"label none data (default '%(default)s')", default="_unknown")
 parser.add_argument("--use-time", action="store_true", help="sort and plot based on time (default)", default=False)
 parser.add_argument("--use-energy", action="store_true", help="sort and plot based on energy", default=False)
 parser.add_argument("--totals", action="store_true", help="output total numbers", default=False)
@@ -97,13 +103,14 @@ if (not args.profiles) or (len(args.profiles) <= 0):
     parser.print_help()
     sys.exit(1)
 
+if len(args.aggregate) == 0:
+    args.aggregate = aggregateDefault
 
-aggregateKeys = [aggregateKeyNames.index(x) for x in args.aggregate_keys.split(',')]
+if len(args.external_aggregate) == 0:
+    args.external_aggregate = args.aggregate
 
-if (max(aggregateKeys) > 5 or min(aggregateKeys) < 0):
-    print("ERROR: aggregate keys are out of bounds (0-5)")
-    sys.exit(1)
-
+if args.external_delimiter is None:
+    args.external_delimiter = args.delimiter
 
 aggregatedProfile = {
     'version': profileLib.aggProfileVersion,
@@ -121,7 +128,11 @@ aggregatedProfile = {
     'toolchain': 'various'
 }
 
-meanFac = 1 / aggregatedProfile['mean']
+if args.mode == 'add':
+    modeFac = 1
+else:
+    modeFac = 1 / aggregatedProfile['mean']
+
 avgLatencyUs = 0
 avgSampleTime = 0
 
@@ -153,13 +164,13 @@ for fileProfile in args.profiles:
     if (profile['volts'] != aggregatedProfile['volts']):
         print("ERROR: profile voltages don't match!")
 
-    sampleFormatter = profileLib.sampleFormatter(profile['binaries'], profile['functions'], profile['files'])
+    sampleFormatter = profileLib.sampleFormatter(profile['maps'])
 
-    aggregatedProfile['latencyTime'] += profile['latencyTime'] * meanFac
-    aggregatedProfile['samplingTime'] += profile['samplingTime'] * meanFac
-    aggregatedProfile['samples'] += profile['samples'] * meanFac
+    aggregatedProfile['latencyTime'] += profile['latencyTime'] * modeFac
+    aggregatedProfile['samplingTime'] += profile['samplingTime'] * modeFac
+    aggregatedProfile['samples'] += profile['samples'] * modeFac
     if ('energy' in profile):
-        aggregatedProfile['energy'] += profile['energy'] * meanFac
+        aggregatedProfile['energy'] += profile['energy'] * modeFac
     avgSampleTime = profile['samplingTime'] / profile['samples']
     avgLatencyTime = profile['latencyTime'] / profile['samples']
 
@@ -188,9 +199,12 @@ for fileProfile in args.profiles:
 
             cpuShare = (useSampleTime / (sampleWallTime * activeCores)) if sampleWallTime != 0 else 0
 
-            sampleData = sampleFormatter.getSample(thread[2])
+            sample = sampleFormatter.remapSample(thread[2])
+            if sample[profileLib.SAMPLE.binary] == profile['target']:
+                aggregateIndex = sampleFormatter.formatSample(sample, displayKeys=args.aggregate, delimiter=args.delimiter, labelNone=args.label_none)
+            else:
+                aggregateIndex = sampleFormatter.formatSample(sample, displayKeys=args.external_aggregate, delimiter=args.external_delimiter, labelNone=args.label_none)
 
-            aggregateIndex = sampleFormatter.formatSample(sampleData, displayKeys=aggregateKeys)
             if threadId not in threadLocations:
                 threadLocations[threadId] = None
 
@@ -200,7 +214,7 @@ for fileProfile in args.profiles:
                     sample[0] * cpuShare * useSampleTime,  # energy (later power)
                     1,
                     1,
-                    sampleFormatter.sanitizeOutput(aggregateIndex, lStringStrip=aggregatedProfile['target'])
+                    aggregateIndex
                 ]
             else:
                 subAggregate[aggregateIndex][0] += useSampleTime
@@ -217,17 +231,17 @@ for fileProfile in args.profiles:
 
     for key in subAggregate:
         if key in aggregatedProfile['profile']:
-            aggregatedProfile['profile'][key][profileLib.aggTime] += subAggregate[key][0] * meanFac
-            aggregatedProfile['profile'][key][profileLib.aggEnergy] += subAggregate[key][1] * meanFac
-            aggregatedProfile['profile'][key][profileLib.aggSamples] += subAggregate[key][2] * meanFac
-            aggregatedProfile['profile'][key][profileLib.aggExecs] += subAggregate[key][3] * meanFac
+            aggregatedProfile['profile'][key][profileLib.aggTime] += subAggregate[key][0] * modeFac
+            aggregatedProfile['profile'][key][profileLib.aggEnergy] += subAggregate[key][1] * modeFac
+            aggregatedProfile['profile'][key][profileLib.aggSamples] += subAggregate[key][2] * modeFac
+            aggregatedProfile['profile'][key][profileLib.aggExecs] += subAggregate[key][3] * modeFac
         else:
             aggregatedProfile['profile'][key] = [
-                subAggregate[key][0] * meanFac,
+                subAggregate[key][0] * modeFac,
                 0,
-                subAggregate[key][1] * meanFac,
-                subAggregate[key][2] * meanFac,
-                subAggregate[key][3] * meanFac,
+                subAggregate[key][1] * modeFac,
+                subAggregate[key][2] * modeFac,
+                subAggregate[key][3] * modeFac,
                 subAggregate[key][4]
 
             ]

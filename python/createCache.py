@@ -1,19 +1,18 @@
 #!/usr/bin/env python3
-import sys
 import argparse
 import profileLib
 
-aggregateKeyNames = ["pc", "binary", "file", "procedure_mangled", "procedure", "line"]
-
 parser = argparse.ArgumentParser(description="Create cache for elf files")
-parser.add_argument("elfs", help="executable to create cache", nargs="+")
+parser.add_argument("elf", help="executable to create cache")
+parser.add_argument("-n", "--name", help="choose a different name for this executable", default=None)
+parser.add_argument("-d", "--dynmap", help="provide dynamic branch informations as csv", default=None)
+parser.add_argument("-s", "--search-path", help="add search path for source code files", action="append", default=[])
+parser.add_argument("--no-source", help="do not include source code", action="store_true", default=False)
+parser.add_argument("--no-basic-block-reconstruction", help="do not try to reconstruct basic blocks", action="store_true", default=False)
 args = parser.parse_args()
 
 if profileLib.disableCache:
-    print("Caching is disabled via environment variable DISABLE_CACHE!");
-    sys.exit(1);
+    print('INFO: cache is disabled, nothing will be written to disc')
 
-for elf in args.elfs:
-    cache = profileLib.elfCache();
-    cache.openOrCreateCache(elf);
-    del cache;
+cache = profileLib.elfCache();
+cache.createCache(args.elf, name=args.name, sourceSearchPaths = args.search_path, dynmapfile=args.dynmap, includeSource=not args.no_source, basicblockReconstruction=not args.no_basic_block_reconstruction);

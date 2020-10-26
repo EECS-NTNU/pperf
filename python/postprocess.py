@@ -58,8 +58,7 @@ if (not args.profile) or (not os.path.isfile(args.profile)):
 if args.disable_cache:
     profileLib.disableCache = True
 if args.disable_unwind_inline:
-    profileLib.disableCache = True
-    profileLib.disableInlineUnwinding = True
+    profileLib.unwindInline = True
 
 if (not args.search_path):
     args.search_path = []
@@ -181,8 +180,8 @@ del vmmaps
 del vmmapString
 gc.collect()
 
-profile['name'] = args.name if args.name else sampleParser.binaries[0]['binary']
-profile['target'] = sampleParser.binaries[0]['binary']
+profile['name'] = args.name if args.name else sampleParser.getName(sampleParser.binaries[0]['binary'])
+profile['target'] = sampleParser.getName(sampleParser.binaries[0]['binary'])
 
 i = 0
 prevThreadCpuTimes = {}
@@ -220,13 +219,13 @@ for sample in rawSamples:
         threadCpuTime = thread[2] - prevThreadCpuTimes[thread[0]]
         prevThreadCpuTimes[thread[0]] = thread[2]
 
-        processedSample.append([thread[0], threadCpuTime, sampleParser.parseFromPC(thread[1])])
+        processedSample.append([thread[0], threadCpuTime, sampleParser.parsePC(thread[1])])
 
     profile['profile'].append([samplePower, sampleWallTime, processedSample])
 
-profile['binaries'] = sampleParser.getBinaryMap()
-profile['functions'] = sampleParser.getFunctionMap()
-profile['files'] = sampleParser.getFileMap()
+profile['maps'] = sampleParser.getMaps()
+profile['sources'] = sampleParser.getSources()
+profile['asms'] = sampleParser.getAsms()
 profile['energy'] = cumEnergy
 profile['power'] = cumEnergy / profile['samplingTime']
 
