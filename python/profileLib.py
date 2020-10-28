@@ -21,7 +21,7 @@ LABEL_KERNEL  = '_kernel'
 LABEL_UNSUPPORTED = '_unsupported'
 
 cacheVersion = 'c0.2'
-aggProfileVersion = 'a0.6'
+aggProfileVersion = 'a0.7'
 profileVersion = '0.5'
 
 aggTime = 0
@@ -30,10 +30,12 @@ aggEnergy = 2
 aggSamples = 3
 aggExecs = 4
 aggLabel = 5
+aggSample = 6
 
 unwindInline = False if 'UNWIND_INLINE' in os.environ and os.environ['UNWIND_INLINE'] == '0' else True
 disableCache = True if 'DISABLE_CACHE' in os.environ and os.environ['DISABLE_CACHE'] == '1' else False
 crossCompile = "" if 'CROSS_COMPILE' not in os.environ else os.environ['CROSS_COMPILE']
+cacheFolder = str(pathlib.Path.home()) + "/.cache/pperf/" if 'PPERF_CACHE' not in os.environ else os.environ['PPERF_CACHE']
 _toolchainVersion = False
 
 
@@ -101,26 +103,26 @@ class elfCache:
         }
     }
 
-    cacheFolder = str(pathlib.Path.home()) + "/.cache/pperf/"
-
     caches = {}
 
     def __init__(self):
-        if not os.path.isdir(self.cacheFolder):
-            os.makedirs(self.cacheFolder)
+        global cacheFolder
+        if not os.path.isdir(cacheFolder):
+            os.makedirs(cacheFolder)
            
     def getCacheName(self, elf):
+        global cacheFolder
         global unwindInline
         hasher = hashlib.md5()
         with open(elf, 'rb') as afile:
             hasher.update(afile.read())
-        return f"{self.cacheFolder}/{os.path.basename(elf)}_{'i' if unwindInline else ''}{hasher.hexdigest()}"
+        return f"{cacheFolder}/{os.path.basename(elf)}_{'i' if unwindInline else ''}{hasher.hexdigest()}"
 
     def openOrCreateCache(self, elf: str):
         global disableCache
         if not self.cacheAvailable(elf):
             if disableCache:
-                print(f"WARNING: cache disabled, construct limited in memory cache", file=sys.stderr)
+                print(f"WARNING: cache disabled, constructing limited in memory cache", file=sys.stderr)
                 self.createCache(elf, verbose=False)
             else:
                 raise Exception(f'could not find cache for file {elf}, please create first or run with disabled cache')
@@ -128,12 +130,8 @@ class elfCache:
     def getSampleFromPC(self, elf : str, pc : int):
         self.openOrCreateCache(elf)
         if pc not in self.caches[elf]['cache']:
-            print(f"WARNING: 0x{pc:x} does not exist in cache of file {elf}", file=sys.stderr)
-            # Construct a sample that belongs to this binary but with no further informations
-            sample = copy(SAMPLE.invalid)
-            sample[SAMPLE.pc] = pc
-            sample[SAMPLE.binary] = self.caches[elf]['name']
-            return sample
+            print(f"WARNING: 0x{pc:x} does not exist in {elf}", file=sys.stderr)
+            return None
         else:
             return self.caches[elf]['cache'][pc]
 
@@ -163,8 +161,6 @@ class elfCache:
             cache = pickle.load(open(cacheName, mode="rb"))
             if 'version' not in cache or cache['version'] != cacheVersion:
                 raise Exception(f"wrong version of cache for {elf} located at {cacheName}!")
-            if cache['toolchain'] != getToolchainVersion():
-                raise Exception(f"toolchain version of cache for {elf} located at {cacheName} does not match")
             if load:
                 self.caches[elf] = cache
             return True
@@ -300,14 +296,18 @@ class elfCache:
                                 searchPath = pathlib.Path(*searchPath.parts[1:])
                             found = False
                             for search in sourceSearchPaths:
-                                while not found and len(searchPath.parts) > 0:
-                                    if os.path.isfile(search / searchPath):
-                                        targetFile = search / searchPath
+                                currentSearchPath = searchPath
+                                while not found and len(currentSearchPath.parts) > 0:
+                                    if os.path.isfile(search / currentSearchPath):
+                                        targetFile = search / currentSearchPath
                                         found=True
-                                    searchPath = pathlib.Path(*searchPath.parts[1:])
-                                if not found:
-                                    if verbose:
-                                        print(f"WARNING: could not find source code for {os.path.basename(sourcePath)}", file=sys.stderr)
+                                        break
+                                    currentSearchPath = pathlib.Path(*currentSearchPath.parts[1:])
+                                if found:
+                                    break
+                            if not found:
+                                if verbose:
+                                    print(f"WARNING: could not find source code for {os.path.basename(sourcePath)}", file=sys.stderr)
 
                         if targetFile is not None:
                             decoded = False
@@ -350,6 +350,7 @@ class elfCache:
                             print(f"WARNING: could not read dynamic branch information from {dynmapfile}", file=sys.stderr)
 
                 pcs = sorted(cache['cache'].keys())
+                unresolvedBranches = []
                 # First pass to identify branches
                 for pc in cache['cache']:
                     instruction = cache['cache'][pc][SAMPLE.instruction].lower()
@@ -372,33 +373,32 @@ class elfCache:
                             if not branched and verbose:
                                 # Might be a branch that has dynmap information or comes from the plt
                                 if pc not in dynmap and not (cache['cache'][pc][SAMPLE.function].endswith('.plt') or cache['cache'][pc][SAMPLE.function].endswith('@plt')):
-                                    print(f"WARNING: dynamic branch might not be resolved at 0x{pc:x}: {cache['asm'][pc]}", file=sys.stderr)
+                                    unresolvedBranches.append(pc)
 
                 # Parse dynmap to complete informations
-                newBranchTargets = 0
-                knownBranchTargets = 0
+                newBranchTargets = []
+                knownBranchTargets = []
                 for pc in dynmap:
                     if pc not in cache['cache']:
                         raise Exception('address 0x{pc:x} from dynamic branch informations is unknown')
                     if verbose and not cache['cache'][pc][SAMPLE.meta] & ADDRESS_BRANCH:
-                        print(f"WARNING: dynamic branch information provided an unknown branch at 0x{pc:x}: {cache['asm'][pc]}", file=sys.stderr)
+                        raise Exception('dynamic branch information provided an unknown branch at 0x{pc:x}')
                     cache['cache'][pc][SAMPLE.meta] |= ADDRESS_BRANCH
                     for target in dynmap[pc]:
                         if target not in cache['cache']:
                             raise Exception('address 0x{target:x} from dynamic branch informations is unknown')
                         if not cache['cache'][target][SAMPLE.meta] & ADDRESS_TARGET and not cache['cache'][target][SAMPLE.meta] & ADDRESS_FHEAD:
-                            newBranchTargets += 1
-                            if verbose:
-                                print(f"INFO: new dynamic branch taget 0x{target:x}", file=sys.stderr)
+                            newBranchTargets.append(target)
                         else:
-                            knownBranchTargets += 1
-                            if verbose:
-                                print(f"INFO: dynamic branch taget 0x{target:x} is already known", file=sys.stderr)
+                            knownBranchTargets.append(target)
                         cache['cache'][target][SAMPLE.meta] |= ADDRESS_TARGET
-                if verbose and newBranchTargets > 0:
-                    print(f"INFO: {newBranchTargets} new branch targets were identified with dynamic branch information", file=sys.stderr)
-                if verbose and knownBranchTargets > 0:
-                    print(f"INFO: {knownBranchTargets} branch targets from dynamic branch information were already known", file=sys.stderr)
+                if verbose and len(newBranchTargets) > 0:
+                    print(f"INFO: {len(newBranchTargets)} new branch targets were identified with dynamic branch information ({', '.join([f'0x{x:x}' for x in newBranchTargets])})", file=sys.stderr)
+                if verbose and len(knownBranchTargets) > 0:
+                    print(f"INFO: {len(knownBranchTargets)} branch targets from dynamic branch information were already known ({', '.join([f'0x{x:x}' for x in knownBranchTargets])})", file=sys.stderr)
+
+                if verbose and len(unresolvedBranches) > 0:
+                    print(f"WARNING: {len(unresolvedBranches)} dynamic branches might not be resolved! ({', '.join([f'0x{x:x}' for x in unresolvedBranches])})", file=sys.stderr)
 
                 # Second pass to resolve the basic blocks
                 basicblockCount = 0
@@ -605,7 +605,8 @@ class sampleParser:
             return self._localSampleCache[pc]
 
         binary = self.getBinaryFromPC(pc)
-        sample = copy(SAMPLE.invalid)
+        sample = None
+
         if binary is not False:
             # Static pc is used as is
             # dynamic pc points into a virtual memory range which was mapped according to the vmmap
@@ -614,6 +615,7 @@ class sampleParser:
             srcpc = pc if binary['static'] else (pc - binary['start']) + binary['offset']
 
             if binary['kernel']:
+                sample = copy(SAMPLE.invalid)
                 sample[SAMPLE.pc] = srcpc
                 sample[SAMPLE.binary] = binary['binary']
                 for f in self.kallsyms:
@@ -622,18 +624,20 @@ class sampleParser:
                         break
             else:
                 sample = self.cache.getSampleFromPC(binary['path'], srcpc)
+                if sample is not None:
+                    if sample[SAMPLE.binary] not in self.sources:
+                        self.sources[sample[SAMPLE.binary]] = {}
+                    if sample[SAMPLE.binary] not in self.asms:
+                        self.asms[sample[SAMPLE.binary]] = self.cache.getAsm(binary['path'])
 
-                if sample[SAMPLE.binary] not in self.sources:
-                    self.sources[sample[SAMPLE.binary]] = {}
-                if sample[SAMPLE.file] not in self.sources[sample[SAMPLE.binary]]:
-                    self.sources[sample[SAMPLE.binary]][sample[SAMPLE.file]] = self.cache.getSource(binary['path'], sample[SAMPLE.file])
-                if sample[SAMPLE.binary] not in self.asms:
-                    self.asms[sample[SAMPLE.binary]] = self.cache.getAsm(binary['path'])
-        else:
+                    if sample[SAMPLE.file] is not None and sample[SAMPLE.file] not in self.sources[sample[SAMPLE.binary]]:
+                        self.sources[sample[SAMPLE.binary]][sample[SAMPLE.file]] = self.cache.getSource(binary['path'], sample[SAMPLE.file])
+                       
+        if sample is None:
+            sample = copy(SAMPLE.invalid)
             sample[SAMPLE.pc] = pc
 
         result = self.mapper.mapValues(sample)
-
 
         self._localSampleCache[pc] = result
         return result
@@ -678,4 +682,7 @@ class sampleFormatter():
                 valid = False
             if not valid:
                 raise Exception(f'class sampleFormatter encountered unknown display key {k}')
-        return delimiter.join([f"0x{sample[x]:x}" if x == SAMPLE.pc else str(labelNone) if sample[x] is None else str(sample[x]) for x in displayKeys])
+        return delimiter.join([str(labelNone) if sample[x] is None else
+                               f"0x{sample[x]:x}" if x == SAMPLE.pc else
+                               os.path.basename(sample[x]) if x == SAMPLE.file else
+                               str(sample[x]) for x in displayKeys])

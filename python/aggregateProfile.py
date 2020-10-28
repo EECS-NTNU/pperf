@@ -214,7 +214,8 @@ for fileProfile in args.profiles:
                     sample[0] * cpuShare * useSampleTime,  # energy (later power)
                     1,
                     1,
-                    aggregateIndex
+                    aggregateIndex,
+                    sample
                 ]
             else:
                 subAggregate[aggregateIndex][0] += useSampleTime
@@ -242,8 +243,8 @@ for fileProfile in args.profiles:
                 subAggregate[key][1] * modeFac,
                 subAggregate[key][2] * modeFac,
                 subAggregate[key][3] * modeFac,
-                subAggregate[key][4]
-
+                subAggregate[key][4],
+                subAggregate[key][5]
             ]
 
     del subAggregate

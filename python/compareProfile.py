@@ -125,7 +125,7 @@ parser.add_argument("--energy-threshold", help="energy contribution threshold (i
 parser.add_argument("--exclude-kernel", help="exclude kernel symbols from comparison", action="store_true", default=False)
 parser.add_argument("--exclude-foreign", help="exclude foreign symbols from comparison", action="store_true", default=False)
 parser.add_argument("--exclude-unknown", help="exclude unknown symbols from comparison", action="store_true", default=False)
-parser.add_argument('--names', help='names of the provided profiles (comma sepperated)', type=str, default=False)
+parser.add_argument('--names', help='names of the provided profiles',default=[], nargs="+")
 parser.add_argument('-n', '--name', action='append', help='name the provided profiles', default=[])
 parser.add_argument("-t", "--table", help="output csv table")
 parser.add_argument("-p", "--plot", help="plotly html file")
@@ -143,9 +143,6 @@ args = parser.parse_args()
 
 if (not args.use_time and not args.use_energy and not args.use_power and not args.use_samples and not args.use_exec_times):
     args.use_time = True
-
-if (len(args.name) == 0 and args.names is not False):
-    args.name = args.names.split(',')
 
 header = ""
 

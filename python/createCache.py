@@ -4,6 +4,7 @@ import profileLib
 
 parser = argparse.ArgumentParser(description="Create cache for elf files")
 parser.add_argument("elf", help="executable to create cache")
+parser.add_argument("-f", "--force", default=False, action="store_true", help="forces rebuild of cache")
 parser.add_argument("-n", "--name", help="choose a different name for this executable", default=None)
 parser.add_argument("-d", "--dynmap", help="provide dynamic branch informations as csv", default=None)
 parser.add_argument("-s", "--search-path", help="add search path for source code files", action="append", default=[])
@@ -15,4 +16,7 @@ if profileLib.disableCache:
     print('INFO: cache is disabled, nothing will be written to disc')
 
 cache = profileLib.elfCache();
-cache.createCache(args.elf, name=args.name, sourceSearchPaths = args.search_path, dynmapfile=args.dynmap, includeSource=not args.no_source, basicblockReconstruction=not args.no_basic_block_reconstruction);
+if cache.cacheAvailable(args.elf) and not args.force:
+    print('INFO: cache already available, force rebuild via --force')
+else:
+    cache.createCache(args.elf, name=args.name, sourceSearchPaths = args.search_path, dynmapfile=args.dynmap, includeSource=not args.no_source, basicblockReconstruction=not args.no_basic_block_reconstruction);

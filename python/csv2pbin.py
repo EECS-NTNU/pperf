@@ -110,8 +110,8 @@ if (noBinaries):
     profile['name'] = args.name if args.name else profileLib.LABEL_UNKNOWN
     profile['target'] = profileLib.LABEL_UNKNOWN
 else:
-    profile['name'] = args.name if args.name else sampleParser.getName(sampleParser.binaries[0]['binary'])
-    profile['target'] = sampleParser.getName(sampleParser.binaries[0]['binary'])
+    profile['name'] = args.name if args.name else sampleParser.getName(sampleParser.binaries[0]['path'])
+    profile['target'] = sampleParser.getName(sampleParser.binaries[0]['path'])
 
 if (args.kallsyms):
     sampleParser.loadKallsyms(args.kallsyms)

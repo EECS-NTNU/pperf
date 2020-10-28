@@ -180,8 +180,8 @@ del vmmaps
 del vmmapString
 gc.collect()
 
-profile['name'] = args.name if args.name else sampleParser.getName(sampleParser.binaries[0]['binary'])
-profile['target'] = sampleParser.getName(sampleParser.binaries[0]['binary'])
+profile['name'] = args.name if args.name else sampleParser.getName(sampleParser.binaries[0]['path'])
+profile['target'] = sampleParser.getName(sampleParser.binaries[0]['path'])
 
 i = 0
 prevThreadCpuTimes = {}
