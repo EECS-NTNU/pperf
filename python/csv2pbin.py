@@ -16,15 +16,14 @@ profile = {
     'samples': 0,
     'samplingTime': 0,
     'latencyTime': 0,
+    'volts': 0,
     'energy': 0,
     'power': 0,
-    'volts': 1,
-    'cpus': 1,
+    'cpus': 0,
     'name': "",
     'target': "",
-    'binaries': [],
-    'functions': [],
-    'files': [],
+    'maps' : {}, # samples are mapped towrds those maps to reduce size
+    'cacheMap' : {}, # which binary belongs to which cache
     'profile': [],
     'toolchain': profileLib.getToolchainVersion()
 }
@@ -217,8 +216,7 @@ profile['samplingTime'] = wallTime - startTime
 profile['energy'] = cumEnergy
 profile['power'] = cumEnergy / profile['samplingTime']
 profile['maps'] = sampleParser.getMaps()
-profile['sources'] = sampleParser.getSources()
-profile['asms'] = sampleParser.getAsms()
+profile['cacheMap'] = sampleParser.getCacheMap()
 
 print("\nPost processing... finished!")
 

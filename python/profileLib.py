@@ -21,23 +21,14 @@ LABEL_KERNEL  = '_kernel'
 LABEL_UNSUPPORTED = '_unsupported'
 
 cacheVersion = 'c0.2'
-aggProfileVersion = 'a0.7'
+aggProfileVersion = 'a0.8'
 profileVersion = '0.5'
-
-aggTime = 0
-aggPower = 1
-aggEnergy = 2
-aggSamples = 3
-aggExecs = 4
-aggLabel = 5
-aggSample = 6
 
 unwindInline = False if 'UNWIND_INLINE' in os.environ and os.environ['UNWIND_INLINE'] == '0' else True
 disableCache = True if 'DISABLE_CACHE' in os.environ and os.environ['DISABLE_CACHE'] == '1' else False
 crossCompile = "" if 'CROSS_COMPILE' not in os.environ else os.environ['CROSS_COMPILE']
 cacheFolder = str(pathlib.Path.home()) + "/.cache/pperf/" if 'PPERF_CACHE' not in os.environ else os.environ['PPERF_CACHE']
-_toolchainVersion = False
-
+_toolchainVersion = None
 
 class SAMPLE:
     pc          = 0 # int
@@ -53,9 +44,9 @@ class SAMPLE:
 
 def getToolchainVersion():
     global _toolchainVersion
-    global crossCompile
-    if _toolchainVersion is not False:
+    if _toolchainVersion is not None:
         return _toolchainVersion
+    global crossCompile
     addr2line = subprocess.run(f"{crossCompile}addr2line -v | head -n 1 | egrep -Eo '[0-9]+\.[0-9.]+$'", shell=True, stdout=subprocess.PIPE)
     addr2line.check_returncode()
     _toolchainVersion = crossCompile + addr2line.stdout.decode('utf-8').split('\n')[0]
@@ -104,19 +95,34 @@ class elfCache:
     }
 
     caches = {}
+    cacheFiles = {}
 
     def __init__(self):
         global cacheFolder
         if not os.path.isdir(cacheFolder):
             os.makedirs(cacheFolder)
-           
-    def getCacheName(self, elf):
+
+    def getRawCache(self, name):
+        global cacheFolder
+        name = os.path.abspath(f'{cacheFolder}/{name}')
+        lock = FileLock(name + ".lock")
+        # If the lock is held this will stall
+        lock.acquire()
+        lock.release()
+        if os.path.isfile(name):
+            return pickle.load(open(name, mode="rb"))
+        else:
+            raise Exception(f'could not find requested elf cache {name}')
+          
+    def getCacheFile(self, elf):
+        if elf in self.cacheFiles:
+            return self.cacheFiles[elf]
         global cacheFolder
         global unwindInline
         hasher = hashlib.md5()
         with open(elf, 'rb') as afile:
             hasher.update(afile.read())
-        return f"{cacheFolder}/{os.path.basename(elf)}_{'i' if unwindInline else ''}{hasher.hexdigest()}"
+        return os.path.abspath(f"{cacheFolder}/{os.path.basename(elf)}_{'i' if unwindInline else ''}{hasher.hexdigest()}")
 
     def openOrCreateCache(self, elf: str):
         global disableCache
@@ -135,16 +141,6 @@ class elfCache:
         else:
             return self.caches[elf]['cache'][pc]
 
-    def getSource(self, elf : str , file: str):
-        self.openOrCreateCache(elf)
-        if file in self.caches[elf]['source']:
-            return self.caches[elf]['source'][file]
-        return None
-
-    def getAsm(self, elf : str):
-        self.openOrCreateCache(elf)
-        return self.caches[elf]['asm']
-
     def cacheAvailable(self, elf : str, load = True):
         if elf in self.caches:
             return True
@@ -152,16 +148,17 @@ class elfCache:
         if disableCache:
             return False
         global cacheVersion
-        cacheName = self.getCacheName(elf)
-        lock = FileLock(cacheName + ".lock")
+        cacheFile = self.getCacheFile(elf)
+        lock = FileLock(cacheFile + ".lock")
         # If the lock is held this will stall
         lock.acquire()
         lock.release()
-        if os.path.isfile(cacheName):
-            cache = pickle.load(open(cacheName, mode="rb"))
+        if os.path.isfile(cacheFile):
+            cache = pickle.load(open(cacheFile, mode="rb"))
             if 'version' not in cache or cache['version'] != cacheVersion:
-                raise Exception(f"wrong version of cache for {elf} located at {cacheName}!")
+                raise Exception(f"wrong version of cache for {elf} located at {cacheFile}!")
             if load:
+                self.cacheFiles[elf] = cacheFile
                 self.caches[elf] = cache
             return True
         else:
@@ -177,13 +174,13 @@ class elfCache:
             name = os.path.basename(elf)
 
         if not disableCache:
-            cacheName = self.getCacheName(elf)
-            lock = FileLock(cacheName + ".lock")
+            cacheFile = self.getCacheFile(elf)
+            lock = FileLock(cacheFile + ".lock")
             lock.acquire()
 
             # Remove the cache if it already exists
-            if os.path.isfile(cacheName):
-                os.remove(cacheName)
+            if os.path.isfile(cacheFile):
+                os.remove(cacheFile)
 
         try:
 
@@ -206,7 +203,7 @@ class elfCache:
                 'unwindInline': not unwindInline,
                 'cache' : {},
                 'source': {},
-                'asm': {}
+                'asm': {},
             }
 
             if cache['arch'] not in self.archBranches and basicblockReconstruction:
@@ -412,7 +409,7 @@ class elfCache:
                     if meta & ADDRESS_BRANCH:
                         basicblockCount += 1
             if not disableCache:
-                pickle.dump(cache, open(cacheName, "wb"), pickle.HIGHEST_PROTOCOL)
+                pickle.dump(cache, open(cacheFile, "wb"), pickle.HIGHEST_PROTOCOL)
             self.caches[elf] = cache
         finally:
             if not disableCache:
@@ -483,8 +480,7 @@ class sampleParser:
     cache = elfCache()
     # Mapper will compress the samples down to a numeric list
     mapper = listmapper([SAMPLE.binary, SAMPLE.file, SAMPLE.function, SAMPLE.basicblock, SAMPLE.instruction])
-    sources = {}
-    asms = {}
+    cacheMap = {}
 
     binaries = []
     kallsyms = []
@@ -625,14 +621,9 @@ class sampleParser:
             else:
                 sample = self.cache.getSampleFromPC(binary['path'], srcpc)
                 if sample is not None:
-                    if sample[SAMPLE.binary] not in self.sources:
-                        self.sources[sample[SAMPLE.binary]] = {}
-                    if sample[SAMPLE.binary] not in self.asms:
-                        self.asms[sample[SAMPLE.binary]] = self.cache.getAsm(binary['path'])
-
-                    if sample[SAMPLE.file] is not None and sample[SAMPLE.file] not in self.sources[sample[SAMPLE.binary]]:
-                        self.sources[sample[SAMPLE.binary]][sample[SAMPLE.file]] = self.cache.getSource(binary['path'], sample[SAMPLE.file])
-                       
+                    if sample[SAMPLE.binary] not in self.cacheMap:
+                        self.cacheMap[sample[SAMPLE.binary]] = os.path.basename(self.cache.getCacheFile(binary['path']))
+                    
         if sample is None:
             sample = copy(SAMPLE.invalid)
             sample[SAMPLE.pc] = pc
@@ -648,11 +639,8 @@ class sampleParser:
     def getMaps(self):
         return self.mapper.retrieveMaps()
 
-    def getSources(self):
-        return self.sources
-
-    def getAsms(self):
-        return self.asms
+    def getCacheMap(self):
+        return self.cacheMap
 
     def getName(self, binary):
         self.cache.openOrCreateCache(binary)

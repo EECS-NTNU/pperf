@@ -13,8 +13,8 @@ from xopen import xopen
 
 aggregateDefault = [profileLib.SAMPLE.names[profileLib.SAMPLE.binary], profileLib.SAMPLE.names[profileLib.SAMPLE.function]]
 
-parser = argparse.ArgumentParser(description="Visualize profiles from intrvelf sampler.")
-parser.add_argument("profiles", help="postprocessed profiles from intrvelf", nargs="+")
+parser = argparse.ArgumentParser(description="Aggregate full profiles, accumulate or average multiple profiles.")
+parser.add_argument("profiles", help="postprocessed profiles from pperf", nargs="+")
 parser.add_argument("--mode", choices=['mean', 'add'], default='mean', help=f"compute mean or accumulated profiles (%(default)s)")
 parser.add_argument("-a", "--aggregate", help=f"aggregate symbols (default: %{', '.join(aggregateDefault)}s)", choices=profileLib.SAMPLE.names, nargs="+", default=[])
 parser.add_argument("-d", "--delimiter", help=f"aggregate symbol delimiter (default '%(default)s')", default=":")
@@ -22,8 +22,8 @@ parser.add_argument("-ea", "--external-aggregate", help=f"aggregate external sym
 parser.add_argument("-ed", "--external-delimiter", help=f"delimiter for external symbols (default: ':')", default=None)
 
 parser.add_argument("--label-none", help=f"label none data (default '%(default)s')", default="_unknown")
-parser.add_argument("--use-time", action="store_true", help="sort and plot based on time (default)", default=False)
-parser.add_argument("--use-energy", action="store_true", help="sort and plot based on energy", default=False)
+parser.add_argument("--use-time", action="store_true", help="sort based on time (default)", default=False)
+parser.add_argument("--use-energy", action="store_true", help="sort based on energy", default=False)
 parser.add_argument("--totals", action="store_true", help="output total numbers", default=False)
 parser.add_argument("--limit-time", help="limit output to %% of time", type=float, default=0)
 parser.add_argument("--limit-energy", help="limit output to %% of time", type=float, default=0)
@@ -31,21 +31,18 @@ parser.add_argument("--time-threshold", help="limit to symbols with time contrib
 parser.add_argument("--limit-time-top", help="limit to top symbols after time", type=int, default=0)
 parser.add_argument("--limit-energy-top", help="limit to top symbols after energy", type=int, default=0)
 parser.add_argument("--energy-threshold", help="limit to symbols with energy contribution (in percent, e.g. 0.0 - 1.0)", type=float, default=0)
-parser.add_argument("--exclude-kernel", help="exclude kernel symbols", action="store_true")
-parser.add_argument("--exclude-foreign", help="exclude foreign symbols", action="store_true")
-parser.add_argument("--exclude-unknown", help="exclude unknown sybmols", action="store_true")
+parser.add_argument("--exclude-binary", help="exclude these binaries", default=[], action="append")
+parser.add_argument("--exclude-file", help="exclude these files", default=[], action="append")
+parser.add_argument("--exclude-function", help="exclude these functions", default=[], action="append")
+parser.add_argument("--exclude-external", help="exclude external binaries", default=False, action="store_true")
 
 parser.add_argument("-t", "--table", help="output csv table")
-parser.add_argument("-p", "--plot", help="plotly html file")
 parser.add_argument("-o", "--output", help="output aggregated profile")
-parser.add_argument("--export", help="export plot (pdf, svg, png,...)")
-parser.add_argument("--width", help="export width", type=int, default=1500)
-parser.add_argument("--height", help="export height", type=int)
+parser.add_argument("-q", "--quiet", action="store_true", help="do not automatically open output file", default=False)
 parser.add_argument("--cut-off-symbols", help="number of characters symbol to insert line break (positive) or cut off (negative)", type=int, default=64)
 parser.add_argument("--account-latency", action="store_true", help="substract latency")
 parser.add_argument("--use-wall-time", action="store_true", help="use sample wall time")
 parser.add_argument("--use-cpu-time", action="store_true", help="use cpu time (default)")
-parser.add_argument("-q", "--quiet", action="store_true", help="do not automatically open output file", default=False)
 
 
 args = parser.parse_args()
@@ -93,7 +90,7 @@ if (args.energy_threshold != 0 and (args.energy_threshold < 0 or args.energy_thr
     parser.print_help()
     sys.exit(0)
 
-if (args.quiet and not args.plot and not args.table and not args.output and not args.export):
+if (args.quiet and not args.table and not args.output and not args.export):
     print("ERROR: don't know what to do")
     parser.print_help()
     sys.exit(1)
@@ -112,6 +109,16 @@ if len(args.external_aggregate) == 0:
 if args.external_delimiter is None:
     args.external_delimiter = args.delimiter
 
+
+class AGGSAMPLE:
+    time = 0
+    power = 1
+    energy = 2
+    samples = 3
+    execs = 4
+    label = 5
+    mappedSample = 6
+   
 aggregatedProfile = {
     'version': profileLib.aggProfileVersion,
     'samples': 0,
@@ -125,7 +132,7 @@ aggregatedProfile = {
     'target': False,
     'mean': len(args.profiles),
     'aggregated': False,
-    'toolchain': 'various'
+    'toolchain': 'various',
 }
 
 if args.mode == 'add':
@@ -199,11 +206,11 @@ for fileProfile in args.profiles:
 
             cpuShare = (useSampleTime / (sampleWallTime * activeCores)) if sampleWallTime != 0 else 0
 
-            sample = sampleFormatter.remapSample(thread[2])
-            if sample[profileLib.SAMPLE.binary] == profile['target']:
-                aggregateIndex = sampleFormatter.formatSample(sample, displayKeys=args.aggregate, delimiter=args.delimiter, labelNone=args.label_none)
+            mappedSample = sampleFormatter.remapSample(thread[2])
+            if mappedSample[profileLib.SAMPLE.binary] == profile['target']:
+                aggregateIndex = sampleFormatter.formatSample(mappedSample, displayKeys=args.aggregate, delimiter=args.delimiter, labelNone=args.label_none)
             else:
-                aggregateIndex = sampleFormatter.formatSample(sample, displayKeys=args.external_aggregate, delimiter=args.external_delimiter, labelNone=args.label_none)
+                aggregateIndex = sampleFormatter.formatSample(mappedSample, displayKeys=args.external_aggregate, delimiter=args.external_delimiter, labelNone=args.label_none)
 
             if threadId not in threadLocations:
                 threadLocations[threadId] = None
@@ -215,7 +222,7 @@ for fileProfile in args.profiles:
                     1,
                     1,
                     aggregateIndex,
-                    sample
+                    mappedSample
                 ]
             else:
                 subAggregate[aggregateIndex][0] += useSampleTime
@@ -232,10 +239,10 @@ for fileProfile in args.profiles:
 
     for key in subAggregate:
         if key in aggregatedProfile['profile']:
-            aggregatedProfile['profile'][key][profileLib.aggTime] += subAggregate[key][0] * modeFac
-            aggregatedProfile['profile'][key][profileLib.aggEnergy] += subAggregate[key][1] * modeFac
-            aggregatedProfile['profile'][key][profileLib.aggSamples] += subAggregate[key][2] * modeFac
-            aggregatedProfile['profile'][key][profileLib.aggExecs] += subAggregate[key][3] * modeFac
+            aggregatedProfile['profile'][key][AGGSAMPLE.time] += subAggregate[key][0] * modeFac
+            aggregatedProfile['profile'][key][AGGSAMPLE.energy] += subAggregate[key][1] * modeFac
+            aggregatedProfile['profile'][key][AGGSAMPLE.samples] += subAggregate[key][2] * modeFac
+            aggregatedProfile['profile'][key][AGGSAMPLE.execs] += subAggregate[key][3] * modeFac
         else:
             aggregatedProfile['profile'][key] = [
                 subAggregate[key][0] * modeFac,
@@ -255,9 +262,9 @@ for fileProfile in args.profiles:
 # aggregated energy and time, turn it to power
 if 'aggregated' not in aggregatedProfile or aggregatedProfile['aggregated'] is False:
     for key in aggregatedProfile['profile']:
-        time = aggregatedProfile['profile'][key][profileLib.aggTime]
-        energy = aggregatedProfile['profile'][key][profileLib.aggEnergy]
-        aggregatedProfile['profile'][key][profileLib.aggPower] = energy / time if time != 0 else 0
+        time = aggregatedProfile['profile'][key][AGGSAMPLE.time]
+        energy = aggregatedProfile['profile'][key][AGGSAMPLE.energy]
+        aggregatedProfile['profile'][key][AGGSAMPLE.power] = energy / time if time != 0 else 0
 
     aggregatedProfile['power'] = aggregatedProfile['energy'] / aggregatedProfile['samplingTime']
     aggregatedProfile['aggregated'] = True
@@ -268,24 +275,36 @@ frequency = 1 / avgSampleTime
 
 values = numpy.array(list(aggregatedProfile['profile'].values()), dtype=object)
 if (args.use_time):
-    values = values[values[:, profileLib.aggTime].argsort()]
+    values = values[values[:, AGGSAMPLE.time].argsort()]
 else:
-    values = values[values[:, profileLib.aggEnergy].argsort()]
+    values = values[values[:, AGGSAMPLE.energy].argsort()]
 
-times = numpy.array(values[:, profileLib.aggTime], dtype=float)
-powers = numpy.array(values[:, profileLib.aggPower], dtype=float)
-energies = numpy.array(values[:, profileLib.aggEnergy], dtype=float)
-samples = numpy.array(values[:, profileLib.aggSamples], dtype=float)
-execs = numpy.array(values[:, profileLib.aggExecs], dtype=float)
-aggregationLabel = values[:, profileLib.aggLabel]
+times = numpy.array(values[:, AGGSAMPLE.time], dtype=float)
+powers = numpy.array(values[:, AGGSAMPLE.power], dtype=float)
+energies = numpy.array(values[:, AGGSAMPLE.energy], dtype=float)
+samples = numpy.array(values[:, AGGSAMPLE.samples], dtype=float)
+execs = numpy.array(values[:, AGGSAMPLE.execs], dtype=float)
+aggregationLabel = values[:, AGGSAMPLE.label]
 
-if (args.exclude_kernel or args.exclude_foreign or args.exclude_unknown):
+if len(args.exclude_binary) > 0 or len(args.exclude_file) > 0 or len(args.exclude_function) > 0 or args.exclude_external:
+    mappedSamples = values[:, AGGSAMPLE.mappedSample]
     keep = numpy.ones(aggregationLabel.shape, dtype=bool)
-    for i, label in enumerate(aggregationLabel):
-        if ((args.exclude_kernel and label.startswith(profileLib.LABEL_KERNEL)) or
-           (args.exclude_foreign and label.startswith(profileLib.LABEL_FOREIGN)) or
-           (args.exclude_unknown and label.startswith(profileLib.LABEL_UNKNOWN))):
+    for i, mappedSample in enumerate(mappedSamples):
+        if args.exclude_external and mappedSample[profileLib.SAMPLE.binary] != aggregatedProfile['target']:
             keep[i] = False
+            continue
+        for exclude in args.exclude_binary:
+            if mappedSample[profileLib.SAMPLE.binary] == exclude:
+                keep[i] = False
+                break
+        for exclude in args.exclude_file:
+            if mappedSample[profileLib.SAMPLE.file] == exclude:
+                keep[i] = False
+                break
+        for exclude in args.exclude_function:
+            if mappedSample[profileLib.SAMPLE.function] == exclude:
+                keep[i] = False
+                break
     times = times[keep]
     execs = execs[keep]
     energies = energies[keep]
@@ -356,88 +375,10 @@ if cutOff is not None:
     aggregationLabel = aggregationLabel[cutOff:]
     samples = samples[cutOff:]
 
-labels = [f"{x:.4f} s, {s:.2f} W" + (f", {x * 100 / totalTime if totalTime > 0 else 0:.2f}%" if args.use_time else f", {y * 100 / totalEnergy if totalEnergy > 0 else 0:.2f}%") for x, s, y in zip(times, powers, energies)]
-
-# aggregationLabel = [ re.sub(r'\(.*\)$', '', x) for x in aggregationLabel ]
-
-if (args.plot) or (args.export):
-    import plotly
-    import plotly.graph_objects as go
-    import plotlyExport
-    plotly.io.templates.default = 'plotly_white'
-
-    if (args.cut_off_symbols > 0):
-        pAggregationLabel = [textwrap.fill(x, args.cut_off_symbols).replace('\n', '<br />') for x in aggregationLabel]
-        leftMargin = abs(args.cut_off_symbols)
-    elif (args.cut_off_symbols < 0):
-        pAggregationLabel = [f"{x[0:abs(args.cut_off_symbols)]}..." if len(x) > abs(args.cut_off_symbols) else x for x in aggregationLabel]
-        leftMargin = abs(args.cut_off_symbols) + 3
-    else:
-        pAggregationLabel = aggregationLabel
-        leftMargin = numpy.max([len(x) for x in pAggregationLabel])
-
-    indices = [i for i, _ in enumerate(energies)]
-    fig = {
-        "data": [go.Bar(
-            x=times if args.use_time else energies,
-            y=indices,
-            text=labels,
-            textposition='auto',
-            orientation='h',
-            hoverinfo="x",
-        )],
-        "layout": go.Layout(
-            title=go.layout.Title(
-                text=f"{aggregatedProfile['name']}, {frequency:.2f} Hz, {aggregatedProfile['samples']:.2f} samples, {(avgLatencyTime * 1000000):.2f} us latency, {totalEnergy:.2f} J" + (f", mean of {aggregatedProfile['mean']} runs" if aggregatedProfile['mean'] > 1 else ""),
-                xref='paper',
-                x=0
-            ),
-            xaxis=go.layout.XAxis(
-                title=go.layout.xaxis.Title(
-                    text="Time in s" if args.use_time else "Energy in J",
-                    font=dict(
-                        family='Courier New, monospace',
-                        size=18,
-                        color='black'  # '#7f7f7f'
-                    )
-                )
-            ),
-            yaxis=go.layout.YAxis(
-                tickfont=dict(
-                    family='monospace',
-                    size=12,
-                    color='black'
-                ),
-                ticktext=pAggregationLabel,
-                tickvals=indices,
-            ),
-            margin=go.layout.Margin(l=10 + (7.00 * leftMargin))
-        )
-    }
-
-    if (args.export):
-        plotlyExport.exportFigure(
-            go.Figure(fig).update_layout(title=None, margin_t=0, margin_r=0),
-            args.width if args.width else None,
-            args.height if args.height else None,
-            args.export,
-            not args.quiet
-        )
-        print(f"Exported to {args.export}")
-
-    if (args.plot):
-        plotly.offline.plot(fig, filename=args.plot, auto_open=not args.quiet)
-        print(f"Plot saved to {args.plot}")
-
-    del pAggregationLabel
-    del fig
-    gc.collect()
-
 if (args.output):
     output = xopen(args.output, "wb")
     pickle.dump(aggregatedProfile, output, pickle.HIGHEST_PROTOCOL)
     print(f"Aggregated profile saved to {args.output}")
-
 
 if (not args.table and args.quiet):
     exit(0)

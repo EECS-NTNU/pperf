@@ -22,9 +22,8 @@ profile = {
     'cpus': 0,
     'name': "",
     'target': "",
-    'binaries': [],
-    'functions': [],
-    'files': [],
+    'maps' : {}, # samples are mapped towrds those maps to reduce size
+    'cacheMap' : {}, # which binary belongs to which cache
     'profile': [],
     'toolchain': profileLib.getToolchainVersion()
 }
@@ -224,8 +223,7 @@ for sample in rawSamples:
     profile['profile'].append([samplePower, sampleWallTime, processedSample])
 
 profile['maps'] = sampleParser.getMaps()
-profile['sources'] = sampleParser.getSources()
-profile['asms'] = sampleParser.getAsms()
+profile['cacheMap'] = sampleParser.getCacheMap()
 profile['energy'] = cumEnergy
 profile['power'] = cumEnergy / profile['samplingTime']
 
