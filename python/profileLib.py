@@ -21,8 +21,9 @@ LABEL_KERNEL  = '_kernel'
 LABEL_UNSUPPORTED = '_unsupported'
 
 cacheVersion = 'c0.2'
-aggProfileVersion = 'a0.8'
 profileVersion = '0.5'
+aggProfileVersion = 'agg0.8'
+annProfileVersion = 'ann0.1'
 
 unwindInline = False if 'UNWIND_INLINE' in os.environ and os.environ['UNWIND_INLINE'] == '0' else True
 disableCache = True if 'DISABLE_CACHE' in os.environ and os.environ['DISABLE_CACHE'] == '1' else False

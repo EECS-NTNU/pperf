@@ -9,21 +9,24 @@ import textwrap
 import tabulate
 import profileLib
 import gc
+import pandas
 from xopen import xopen
 
 aggregateDefault = [profileLib.SAMPLE.names[profileLib.SAMPLE.binary], profileLib.SAMPLE.names[profileLib.SAMPLE.function]]
 
-parser = argparse.ArgumentParser(description="Aggregate full profiles, accumulate or average multiple profiles.")
+parser = argparse.ArgumentParser(description="Annotate profiles on asm and source level.")
 parser.add_argument("profiles", help="postprocessed profiles from pperf", nargs="+")
-parser.add_argument("--mode", choices=['mean', 'add'], default='mean', help=f"compute mean or accumulated profiles (%(default)s)")
+parser.add_argument("--mode", choices=['mean', 'add'], default='mean', help=f"compute mean profiles or accumulated profiles (default: %(default)s)")
+parser.add_argument("--annotate", choices=['asm', 'source'], default='asm', help=f"what to annotate (default: %(default)s)")
+parser.add_argument("--use-time", action="store_true", help="output time (default)", default=False)
+parser.add_argument("--use-energy", action="store_true", help="output energy", default=False)
+
 parser.add_argument("-a", "--aggregate", help=f"aggregate symbols (default: %{', '.join(aggregateDefault)}s)", choices=profileLib.SAMPLE.names, nargs="+", default=[])
 parser.add_argument("-d", "--delimiter", help=f"aggregate symbol delimiter (default '%(default)s')", default=":")
 parser.add_argument("-ea", "--external-aggregate", help=f"aggregate external symbols (default: %{', '.join(aggregateDefault)}s)", choices=profileLib.SAMPLE.names, nargs="+", default=[])
 parser.add_argument("-ed", "--external-delimiter", help=f"delimiter for external symbols (default: ':')", default=None)
 
 parser.add_argument("--label-none", help=f"label none data (default '%(default)s')", default="_unknown")
-parser.add_argument("--use-time", action="store_true", help="sort based on time (default)", default=False)
-parser.add_argument("--use-energy", action="store_true", help="sort based on energy", default=False)
 parser.add_argument("--totals", action="store_true", help="output total numbers", default=False)
 parser.add_argument("--limit-time", help="limit output to %% of time", type=float, default=0)
 parser.add_argument("--limit-energy", help="limit output to %% of time", type=float, default=0)
@@ -36,16 +39,20 @@ parser.add_argument("--exclude-file", help="exclude these files", default=[], ac
 parser.add_argument("--exclude-function", help="exclude these functions", default=[], action="append")
 parser.add_argument("--exclude-external", help="exclude external binaries", default=False, action="store_true")
 
+parser.add_argument("--less-memory", help="opens only one input profile at a time", action="store_true", default=False)
 parser.add_argument("-t", "--table", help="output csv table")
-parser.add_argument("-o", "--output", help="output aggregated profile")
-parser.add_argument("-q", "--quiet", action="store_true", help="do not automatically open output file", default=False)
+parser.add_argument("-o", "--output", help="output annotated profile")
 parser.add_argument("--cut-off-symbols", help="number of characters symbol to insert line break (positive) or cut off (negative)", type=int, default=64)
 parser.add_argument("--account-latency", action="store_true", help="substract latency")
 parser.add_argument("--use-wall-time", action="store_true", help="use sample wall time")
 parser.add_argument("--use-cpu-time", action="store_true", help="use cpu time (default)")
+parser.add_argument("-q", "--quiet", help="do not print annotated profile", default=False, action="store_true")
 
 
 args = parser.parse_args()
+
+if args.annotate == 'source':
+    raise Exception('source annotation is currently not supported, coming soon...')
 
 if (args.use_time is False and args.use_energy is False):
     args.use_time = True
@@ -100,172 +107,157 @@ if (not args.profiles) or (len(args.profiles) <= 0):
     parser.print_help()
     sys.exit(1)
 
-if len(args.aggregate) == 0:
-    args.aggregate = aggregateDefault
+inputProfiles = []
+cacheMap = {}
 
-if len(args.external_aggregate) == 0:
-    args.external_aggregate = args.aggregate
+annotatedProfile = None
 
-if args.external_delimiter is None:
-    args.external_delimiter = args.delimiter
-
-
-class AGGSAMPLE:
-    time = 0
-    power = 1
-    energy = 2
-    samples = 3
-    execs = 4
-    label = 5
-    mappedSample = 6
-   
-aggregatedProfile = {
-    'version': profileLib.aggProfileVersion,
-    'samples': 0,
-    'samplingTime': 0,
-    'latencyTime': 0,
-    'profile': {},
-    'energy': 0,
-    'power': 0,
-    'volts': 0,
-    'name': False,
-    'target': False,
-    'mean': len(args.profiles),
-    'aggregated': False,
-    'toolchain': 'various',
-}
-
-if args.mode == 'add':
-    modeFac = 1
-else:
-    modeFac = 1 / aggregatedProfile['mean']
-
-i = 1
-for fileProfile in args.profiles:
-    profile = {}
+for i, fileProfile in enumerate(args.profiles):
     profile = pickle.load(xopen(fileProfile, mode="rb"))
 
-    if i == 1 and 'version' in profile and profile['version'] == profileLib.aggProfileVersion and len(args.profiles) == 1:
-        aggregatedProfile = profile
+    if i == 0 and len(args.profiles) == 1 and 'version' in profile and profile['version'] == profileLib.annProfileVersion:
+        annotatedProfile = profile
         break
 
-    if i == 1:
-        aggregatedProfile['toolchain'] = profile['toolchain']
-    elif aggregatedProfile['toolchain'] != profile['toolchain']:
-        aggregatedProfile['toolchain'] = 'various'
-
-    print(f"Aggregate profile {i}/{len(args.profiles)}...\r", end="")
-    i += 1
-
     if 'version' not in profile or profile['version'] != profileLib.profileVersion:
-        raise Exception(f"Incompatible profile version (required: {profileLib.profileVersion})")
+        raise Exception(f"Incompatible profile version {'None' if 'version' not in profile else profile['version']} (required: {profileLib.profileVersion})")
 
-    if not aggregatedProfile['target']:
-        aggregatedProfile['name'] = profile['name']
-        aggregatedProfile['target'] = profile['target']
-        aggregatedProfile['volts'] = profile['volts']
+    cacheMap = {**profile['cacheMap'], **cacheMap}
 
-    if (profile['volts'] != aggregatedProfile['volts']):
-        print("ERROR: profile voltages don't match!")
+    if args.less_memory:
+        inputProfiles.append(None)
+        del profile
+    else:
+        inputProfiles.append(profile)
 
-    sampleFormatter = profileLib.sampleFormatter(profile['maps'])
+    gc.collect()
 
-    aggregatedProfile['latencyTime'] += profile['latencyTime'] * modeFac
-    aggregatedProfile['samplingTime'] += profile['samplingTime'] * modeFac
-    aggregatedProfile['samples'] += profile['samples'] * modeFac
-    if ('energy' in profile):
-        aggregatedProfile['energy'] += profile['energy'] * modeFac
-    avgLatencyTime = profile['latencyTime'] / profile['samples']
 
-    subAggregate = {}
-    threadLocations = {}
-    prevSampleWallTime = None
-    for sample in profile['profile']:
-        activeCores = min(len(sample[2]), profile['cpus'])
+if annotatedProfile is None:
+    modeFac = 1
+    if args.mode == 'mean':
+        modeFac /= len(inputProfiles)
+   
+    # aggregateKeys = [profileLib.SAMPLE.binary, profileLib.SAMPLE.file, profileLib.SAMPLE.function, profileLib.SAMPLE.pc]
+    annotatedProfile = {
+       'version': profileLib.annProfileVersion,
+       'samples': 0,
+       'samplingTime': 0,
+       'latencyTime': 0,
+       'annotate': args.annotate,
+       'annotation': {},
+       'energy': 0,
+       'power': 0,
+       'name': None,
+       'target': None,
+       'toolchain': None,
+    }
 
-        if prevSampleWallTime is None:
+    elfCache = profileLib.elfCache()
+    caches = { binary: elfCache.getRawCache(cacheMap[binary]) for binary in cacheMap }
+
+    # annotation = pandas.DataFrame(columns=['pc', 'binary', 'file', 'function', 'basicblock', 'line', 'instruction', 'meta', 'asm', 'source', 'time', 'energy', 'samples'])
+    annotation = pandas.DataFrame()
+
+    print('Reading in assembly', end='', flush=True, file=sys.stderr)
+    asm = pandas.concat([pandas.DataFrame(cache['cache'].values(), columns=['pc', 'binary', 'file', 'function', 'basicblock', 'line', 'instruction', 'meta']).drop(['instruction', 'meta'], axis=1) for cache in caches.values()], ignore_index=True)
+    asm['asm'] = asm.apply(lambda r: caches[r['binary']]['asm'][r['pc']], axis=1)
+    print(', source', flush=True, file=sys.stderr)
+    source = pandas.concat([pandas.DataFrame({'binary': b, 'file': f, 'line': range(1, len(caches[b]['source'][f])+1), 'source' : caches[b]['source'][f]}) for b in caches for f in caches[b]['source'] if caches[b]['source'][f] is not None], ignore_index=True)
+
+    aggregate = {}
+
+    for i, profile in enumerate(inputProfiles):
+        print(f'\rParsing profile {i+1}/{len(inputProfiles)}... ', end='', flush=True, file=sys.stderr)
+        if profile is None:
+            profile = pickle.load(xopen(args.profiles[i], mode="rb"))
+
+        if annotatedProfile['toolchain'] is None:
+            annotatedProfile['toolchain'] = profile['toolchain']
+        elif annotatedProfile['toolchain'] != profile['toolchain']:
+            annotatedProfile['toolchain'] = 'various'
+
+        if annotatedProfile['target'] is None:
+            annotatedProfile['name'] = profile['name']
+            annotatedProfile['target'] = profile['target']
+
+        annotatedProfile['latencyTime'] += profile['latencyTime'] * modeFac
+        annotatedProfile['samplingTime'] += profile['samplingTime'] * modeFac
+        annotatedProfile['samples'] += profile['samples'] * modeFac
+        annotatedProfile['energy'] += profile['energy'] * modeFac
+
+        avgLatencyTime = profile['latencyTime'] / profile['samples']
+
+        profileBinaryMap = profile['maps'][profileLib.SAMPLE.binary]
+
+        prevSampleWallTime = profile['profile'][0][1] if len(profile['profile']) > 0 else 0
+        for sample in profile['profile']:
+            activeCores = min(len(sample[2]), profile['cpus'])
+            sampleWallTime = sample[1] - prevSampleWallTime
+            for thread in sample[2]:
+                pc = thread[2][profileLib.SAMPLE.pc]
+                binary = thread[2][profileLib.SAMPLE.binary]
+                binary = binary if binary is None else profileBinaryMap[binary]
+
+                time = thread[1] if args.use_cpu_time else sampleWallTime
+                if args.account_latency:
+                    time = max(useSampleTime - avgLatencyTime, 0.0)
+
+                energy = sample[0] * time * (time / (sampleWallTime * activeCores)) if sampleWallTime != 0 else 0
+
+                if binary not in aggregate:
+                    aggregate[binary] = {}
+                if pc not in aggregate[binary]:
+                    aggregate[binary][pc] = [0, 0, 0]
+
+                aggregate[binary][pc][0] += time
+                aggregate[binary][pc][1] += energy
+                aggregate[binary][pc][2] += 1
+
             prevSampleWallTime = sample[1]
+        del profile
+        gc.collect()
 
-        sampleWallTime = sample[1] - prevSampleWallTime
-        prevSampleWallTime = sample[1]
-        for thread in sample[2]:
-            threadId = thread[0]
-            if args.use_cpu_time:
-                # Thread CPU Time
-                useSampleTime = thread[1]
-            else:
-                # Sample Wall Time
-                useSampleTime = sampleWallTime
+    print('finished', flush=True, file=sys.stderr)
+    print('Correlating data', end='', flush=True, file=sys.stderr)
+    asm[['time', 'energy', 'samples']] = asm.apply(lambda r: aggregate[r['binary']][r['pc']] if r['binary'] in aggregate and r['pc'] in aggregate[r['binary']] else [0, 0, 0], axis=1, result_type='expand')
+    source = source.join(asm.groupby(['binary', 'file', 'line'], as_index=False)[['time','energy','samples']].sum().set_index(['binary', 'file', 'line']), on=['binary', 'file', 'line'])
+    print(', cleaning up', flush=True, file=sys.stderr)
 
-            if args.account_latency:
-                useSampleTime = max(useSampleTime - avgLatencyTime, 0.0)
+    # Fill in 0 values for time, energy and samples
+    asm[['line', 'time', 'energy', 'samples']] = asm[['line', 'time', 'energy', 'samples']].fillna(0)
+    source[['time', 'energy', 'samples']] = source[['time', 'energy', 'samples']].fillna(0)
 
-            cpuShare = (useSampleTime / (sampleWallTime * activeCores)) if sampleWallTime != 0 else 0
+    # Line must be object
+    annotatedProfile['asm'] = asm.astype({'pc': 'uint64', 'binary': 'object', 'file': 'object', 'function': 'object', 'basicblock': 'object', 'line': 'uint64', 'time': 'float64', 'energy': 'float64', 'samples': 'uint64'})
+    annotatedProfile['source'] = source.astype({'binary': 'object', 'file': 'object', 'line': 'uint64', 'source': 'object', 'time': 'float64', 'energy': 'float64', 'samples': 'uint64'})
 
-            mappedSample = sampleFormatter.remapSample(thread[2])
-            if mappedSample[profileLib.SAMPLE.binary] == profile['target']:
-                aggregateIndex = sampleFormatter.formatSample(mappedSample, displayKeys=args.aggregate, delimiter=args.delimiter, labelNone=args.label_none)
-            else:
-                aggregateIndex = sampleFormatter.formatSample(mappedSample, displayKeys=args.external_aggregate, delimiter=args.external_delimiter, labelNone=args.label_none)
+    del aggregate
+    del inputProfiles
 
-            if threadId not in threadLocations:
-                threadLocations[threadId] = None
-
-            if aggregateIndex not in subAggregate:
-                subAggregate[aggregateIndex] = [
-                    useSampleTime,  # total execution time
-                    sample[0] * cpuShare * useSampleTime,  # energy (later power)
-                    1,
-                    1,
-                    aggregateIndex,
-                    mappedSample
-                ]
-            else:
-                subAggregate[aggregateIndex][0] += useSampleTime
-                subAggregate[aggregateIndex][1] += sample[0] * cpuShare * useSampleTime
-                subAggregate[aggregateIndex][2] += 1
-                if threadLocations[threadId] != aggregateIndex:
-                    subAggregate[aggregateIndex][3] += 1
-
-            threadLocations[threadId] = aggregateIndex
-
-    del sampleFormatter
-    del profile
     gc.collect()
 
-    for key in subAggregate:
-        if key in aggregatedProfile['profile']:
-            aggregatedProfile['profile'][key][AGGSAMPLE.time] += subAggregate[key][0] * modeFac
-            aggregatedProfile['profile'][key][AGGSAMPLE.energy] += subAggregate[key][1] * modeFac
-            aggregatedProfile['profile'][key][AGGSAMPLE.samples] += subAggregate[key][2] * modeFac
-            aggregatedProfile['profile'][key][AGGSAMPLE.execs] += subAggregate[key][3] * modeFac
-        else:
-            aggregatedProfile['profile'][key] = [
-                subAggregate[key][0] * modeFac,
-                0,
-                subAggregate[key][1] * modeFac,
-                subAggregate[key][2] * modeFac,
-                subAggregate[key][3] * modeFac,
-                subAggregate[key][4],
-                subAggregate[key][5]
-            ]
+if (args.output):
+    output = xopen(args.output, "wb")
+    pickle.dump(annotatedProfile, output, pickle.HIGHEST_PROTOCOL)
+    print(f"Annotated profile saved to {args.output}", flush=True, file=sys.stderr)
 
-    del subAggregate
-    gc.collect()
 
-# aggregatedProfile['profile'][key] = [time, power, energy, samples, executions, label]
+exit(0)
+
+# annotatedProfile['profile'][key] = [time, power, energy, samples, executions, label]
 
 # aggregated energy and time, turn it to power
-if 'aggregated' not in aggregatedProfile or aggregatedProfile['aggregated'] is False:
-    for key in aggregatedProfile['profile']:
-        time = aggregatedProfile['profile'][key][AGGSAMPLE.time]
-        energy = aggregatedProfile['profile'][key][AGGSAMPLE.energy]
-        aggregatedProfile['profile'][key][AGGSAMPLE.power] = energy / time if time != 0 else 0
+if 'aggregated' not in annotatedProfile or annotatedProfile['aggregated'] is False:
+    for key in annotatedProfile['profile']:
+        time = annotatedProfile['profile'][key][AGGSAMPLE.time]
+        energy = annotatedProfile['profile'][key][AGGSAMPLE.energy]
+        annotatedProfile['profile'][key][AGGSAMPLE.power] = energy / time if time != 0 else 0
 
-    aggregatedProfile['power'] = aggregatedProfile['energy'] / aggregatedProfile['samplingTime']
-    aggregatedProfile['aggregated'] = True
+    annotatedProfile['power'] = annotatedProfile['energy'] / aggregatedProfile['samplingTime']
+    annotatedProfile['aggregated'] = True
 
-values = numpy.array(list(aggregatedProfile['profile'].values()), dtype=object)
+values = numpy.array(list(annotatedProfile['profile'].values()), dtype=object)
 if (args.use_time):
     values = values[values[:, AGGSAMPLE.time].argsort()]
 else:
@@ -282,7 +274,7 @@ if len(args.exclude_binary) > 0 or len(args.exclude_file) > 0 or len(args.exclud
     mappedSamples = values[:, AGGSAMPLE.mappedSample]
     keep = numpy.ones(aggregationLabel.shape, dtype=bool)
     for i, mappedSample in enumerate(mappedSamples):
-        if args.exclude_external and mappedSample[profileLib.SAMPLE.binary] != aggregatedProfile['target']:
+        if args.exclude_external and mappedSample[profileLib.SAMPLE.binary] != annotatedProfile['target']:
             keep[i] = False
             continue
         for exclude in args.exclude_binary:
@@ -369,7 +361,7 @@ if cutOff is not None:
 
 if (args.output):
     output = xopen(args.output, "wb")
-    pickle.dump(aggregatedProfile, output, pickle.HIGHEST_PROTOCOL)
+    pickle.dump(annotatedProfile, output, pickle.HIGHEST_PROTOCOL)
     print(f"Aggregated profile saved to {args.output}")
 
 if (not args.table and args.quiet):
