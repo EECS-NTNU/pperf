@@ -217,15 +217,16 @@ class elfCache:
             pObjdump.check_returncode()
             sObjdump = pObjdump.stdout.decode('utf-8')
             # Remove trailing additional data that begins with '//'
-            sObjdump = re.sub('[ \t]+(// ).+\n','\n', sObjdump)
+            # sObjdump = re.sub('[ \t]+(// ).+\n','\n', sObjdump)
             # Remove trailing additional data that begins with '#'
-            sObjdump = re.sub('[ \t]+(# ).+\n','\n', sObjdump)
+            # sObjdump = re.sub('[ \t]+(# ).+\n','\n', sObjdump)
 
             for line in sObjdump.split('\n'):
-                objdumpInstruction = re.compile('([0-9a-fA-F]+) (<.+?(\+0x[0-9a-f-A-F]+)?> [^\t]+)(\t[^<]+)?(<.+>)?')
+                objdumpInstruction = re.compile('([0-9a-fA-F]+) (<.+?(\+0x[0-9a-f-A-F]+)?> [^\t]+)(\t[^<\t]+)?(.+)?')
                 funcOffset = re.compile('^<(.+?)(\+0x[0-9a-f-A-F]+)?>$')
                 match0 = objdumpInstruction.match(line)
                 if match0:
+                    # Instruction can be reliably splitted of the second match
                     funcAndInstr = match0.group(2).rsplit(' ', 1)
                     meta = ADDRESS_NORMAL
                     match1 = funcOffset.match(funcAndInstr[0])
@@ -233,10 +234,15 @@ class elfCache:
                         meta |= ADDRESS_FHEAD
                         functionCounter += 1
                     pc = int(match0.group(1), 16)
+                    # match 3 the pc offset in the function, not used here
+                    # match 4 are the function arguments
                     sample = [pc, name, None, match1.group(1), f'f{functionCounter}', None, funcAndInstr[1], meta]
-                    cache['asm'][pc] = funcAndInstr[1]
+                    asm = funcAndInstr[1]
                     if match0.group(4) is not None:
-                        cache['asm'][pc] += '\t' + match0.group(4).strip()
+                        asm += match0.group(4)
+                    if match0.group(5) is not None:
+                        asm += match0.group(5)
+                    cache['asm'][pc] = asm.strip()
                     cache['cache'][pc] = sample
 
             if (len(cache['cache']) == 0):
@@ -354,10 +360,10 @@ class elfCache:
                     instruction = cache['cache'][pc][SAMPLE.instruction].lower()
                     if instruction in self.archBranches[cache['arch']]['all']:
                         cache['cache'][pc][SAMPLE.meta] |= ADDRESS_BRANCH
-                        asm = cache['asm'][pc].split('\t', 1)
-                        if instruction not in self.archBranches[cache['arch']]['remote'] and len(asm) == 2:
+                        asm = cache['asm'][pc].split('\t')
+                        if instruction not in self.archBranches[cache['arch']]['remote'] and len(asm) >= 2:
                             branched = False
-                            for argument in reversed(asm[1].split(',')):
+                            for argument in re.split(', |,| ',asm[1]):
                                 try:
                                     branchTarget = int(argument.strip(), 16)
                                     if branchTarget in cache['cache']:
