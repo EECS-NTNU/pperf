@@ -27,8 +27,8 @@ parser.add_argument("--annotate", choices=['asm', 'source'], default='asm', help
 #parser.add_argument("-ea", "--external-aggregate", help=f"aggregate external symbols (default: %{', '.join(aggregateDefault)}s)", choices=profileLib.SAMPLE.names, nargs="+", default=[])
 #parser.add_argument("-ed", "--external-delimiter", help=f"delimiter for external symbols (default: ':')", default=None)
 
-parser.add_argument("--share", default=False, action="store_true" , help="display metirc shares (default)")
-parser.add_argument("--no-share", default=False, action="store_true" , help="hide metric shares")
+parser.add_argument("--share", default=False, action="store_true" , help="display metirc shares")
+parser.add_argument("--no-share", default=False, action="store_true" , help="hide metric shares (default)")
 parser.add_argument("-s", "--show", choices=['time', 'energy', 'samples'], default=['time', 'samples'], nargs="+", help="show time, energy and/or samples")
 
 parser.add_argument("--binary-time-threshold", type=float, help="include binaries with at least this runtime (default %(default)s)", default=0)
@@ -46,6 +46,9 @@ parser.add_argument("--basicblock-sample-threshold", type=float, help="include b
 parser.add_argument("--instruction-time-threshold", type=float, help="include instructions with at least this runtime (default %(default)s)", default=0)
 parser.add_argument("--instruction-energy-threshold", type=float, help="include instructions with at least this energy consumption (default %(default)s)", default=0)
 parser.add_argument("--instruction-sample-threshold", type=float, help="include instructions with at least this many samples (default %(default)s)", default=0)
+
+parser.add_argument("--level", choices=['binary', 'function', 'instruction'], default='instruction', help="until which level to output")
+parser.add_argument("--external-level", choices=['binary', 'function', 'instruction'], default='instruction', help="until which level to output for external binaries")
 
 #parser.add_argument("--exclude-binary", help="exclude these binaries", default=[], action="append")
 #parser.add_argument("--exclude-file", help="exclude these files", default=[], action="append")
@@ -65,10 +68,10 @@ parser.add_argument("-q", "--quiet", help="do not print annotated profile", defa
 args = parser.parse_args()
 
 if not args.share and not args.no_share:
-    args.share = True
-
-if args.no_share:
     args.share = False
+
+if args.share:
+    args.no_share = False
 
 if args.annotate == 'source':
     raise Exception('source annotation is currently not supported, coming soon...')
@@ -268,7 +271,7 @@ order = asm.groupby(['binary', 'function'])['samples'].sum().sort_values(ascendi
 pandas.options.mode.chained_assignment = None
 asm['pc'] = asm['pc'].apply('0x{:x}'.format)
 
-columns = (((['_tshare_' + x for x in args.show]) + (['_bshare_' + x for x in args.show]) + (['_fshare_' + x for x in args.show])) if args.share else []) + args.show + ['pc', 'instruction', 'args']
+columns = (((['_tshare_' + x for x in args.show]) + (['_bshare_' + x for x in args.show]) + (['_fshare_' + x for x in args.show])) if args.share else []) + args.show + ['pc', 'basicblock', 'instruction', 'args']
 
 shareFloatFmt = "3.2f"
 columnNames = {'time': 'Time [s]', 'energy': 'Energy [J]', 'samples': 'Samples #'}
@@ -295,6 +298,10 @@ for bi, binary in enumerate(order['binary'].unique()):
     ], tablefmt="simple", headers=(['(%)'] * len(args.show) if args.share else []) + [columnNames[x] for x in args.show] + [''], floatfmt=([shareFloatFmt] * len(args.show) if args.share else []) + [columnFmts[x] for x in args.show], showindex=False))
     print('')
 
+    if binary == annotatedProfile['target'] and args.level == 'binary':
+        continue
+    if binary != annotatedProfile['target'] and args.external_level == 'binary':
+        continue
     for fi, function in enumerate(order[order['binary'] == binary]['function'].unique()):
         fAsm = asm[(asm['binary'] == binary) & (asm['function'] == function)]
         fTotalAsm = annotatedProfile['asm'][(annotatedProfile['asm']['binary'] == binary) & (annotatedProfile['asm']['function'] == function)]
@@ -306,13 +313,20 @@ for bi, binary in enumerate(order['binary'].unique()):
             + [(fStats[x]) for x in args.show] + [function]
         ], tablefmt="simple", headers=(['(%)'] * 2 * len(args.show) if args.share else []) + [columnNames[x] for x in args.show] + [''], floatfmt=([shareFloatFmt] * 2 * len(args.show) if args.share else []) + [columnFmts[x] for x in args.show], showindex=False))
         print('')
+
+        if binary == annotatedProfile['target'] and args.level == 'function':
+            continue
+        if binary != annotatedProfile['target'] and args.external_level == 'function':
+            continue
+
         if args.share:
             for x in args.show:
                 fAsm['_tshare_' + x] = fAsm.apply(lambda r: r[x] * 100 / stats[x], axis=1)
                 fAsm['_bshare_' + x] = fAsm.apply(lambda r: r[x] * 100 / bStats[x], axis=1)
                 fAsm['_fshare_' + x] = fAsm.apply(lambda r: r[x] * 100/ fStats[x], axis=1)
 
-        print(tabulate.tabulate(fAsm[columns], tablefmt='simple', headers = ((['(%)'] * 3 * len(args.show)) if args.share else []) + [columnNames[x] for x in args.show] + ['Addr', 'Instr', 'Asm'], floatfmt=([shareFloatFmt] * 3 * len(args.show) if args.share else []) + [columnFmts[x] for x in args.show], showindex=False))
+        fAsm = fAsm.replace({'basicblock': r'^f[0-9]+b'}, {'basicblock': ''}, regex=True)
+        print(tabulate.tabulate(fAsm[columns], tablefmt='simple', headers = ((['(%)'] * 3 * len(args.show)) if args.share else []) + [columnNames[x] for x in args.show] + ['Addr', 'BB', 'Instr', 'Asm'], floatfmt=([shareFloatFmt] * 3 * len(args.show) if args.share else []) + [columnFmts[x] for x in args.show], showindex=False))
         print('')
 
 exit(0)
