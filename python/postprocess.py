@@ -37,7 +37,7 @@ parser.add_argument("-o", "--output", help="write postprocessed profile")
 parser.add_argument("-c", "--cpus", help="list of active cpu cores", default="0-3")
 parser.add_argument("-l", "--little-endian", action="store_true", help="parse profile using little endianess")
 parser.add_argument("-b", "--big-endian", action="store_true", help="parse profile using big endianess")
-parser.add_argument("--disable-unwind-inline", action="store_true", help="do not unwind inlined functions (disables cache)")
+parser.add_argument("--unwind-inline", action="store_true", help="unwind inlined functions (disables cache)")
 parser.add_argument("--disable-cache", action="store_true", help="do not create or use address caches")
 
 parser.add_argument("--dump-vmmap", help="dump vmmap to file")
@@ -56,7 +56,8 @@ if (not args.profile) or (not os.path.isfile(args.profile)):
 
 if args.disable_cache:
     profileLib.disableCache = True
-if args.disable_unwind_inline:
+
+if args.unwind_inline:
     profileLib.unwindInline = True
 
 if (not args.search_path):

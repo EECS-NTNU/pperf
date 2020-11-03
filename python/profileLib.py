@@ -25,7 +25,7 @@ profileVersion = '0.5'
 aggProfileVersion = 'agg0.8'
 annProfileVersion = 'ann0.1'
 
-unwindInline = False if 'UNWIND_INLINE' in os.environ and os.environ['UNWIND_INLINE'] == '0' else True
+unwindInline = True if 'UNWIND_INLINE' in os.environ and os.environ['UNWIND_INLINE'] == '1' else False
 disableCache = True if 'DISABLE_CACHE' in os.environ and os.environ['DISABLE_CACHE'] == '1' else False
 crossCompile = "" if 'CROSS_COMPILE' not in os.environ else os.environ['CROSS_COMPILE']
 cacheFolder = str(pathlib.Path.home()) + "/.cache/pperf/" if 'PPERF_CACHE' not in os.environ else os.environ['PPERF_CACHE']
@@ -201,7 +201,7 @@ class elfCache:
                 'arch': getElfArchitecture(elf),
                 'date': datetime.now(),
                 'toolchain': getToolchainVersion(),
-                'unwindInline': not unwindInline,
+                'unwindInline': unwindInline,
                 'cache' : {},
                 'source': {},
                 'asm': {},
@@ -255,7 +255,14 @@ class elfCache:
                 with os.fdopen(tmpfile, 'w') as tmp:
                     tmp.write('\n'.join(map(lambda x: f'0x{x:x}', cache['cache'].keys())) + '\n')
                     tmp.close()
-                    pAddr2line = subprocess.run(f"{crossCompile}addr2line -Cafr{'i' if unwindInline else ''} -e {elf} @{tmpfilename}", shell=True, stdout=subprocess.PIPE)
+                    # addr2line by default outputs the file/line where the instruction originates from
+                    # the -i option lets it print the chain of inlining which might be multiple files/lines
+                    # We are only intersted in one result per address. We want either the function the
+                    # address ends up in or the function it came from (when inlined). It will return the origin
+                    # without -i and when -i is passed, the last result will be always the function this
+                    # address was inlined to. That means this option is logically inverted for this script
+                    # as we only take the last result per address.
+                    pAddr2line = subprocess.run(f"{crossCompile}addr2line -Cafr{'i' if not unwindInline else ''} -e {elf} @{tmpfilename}", shell=True, stdout=subprocess.PIPE)
                     pAddr2line.check_returncode()
                     sAddr2line = pAddr2line.stdout.decode('utf-8').split("\n0x")
                     for entry in sAddr2line:
@@ -283,9 +290,10 @@ class elfCache:
 
             # Third Step, read in source code
             if includeSource:
-                modnames = set([modname for importer, modname, ispkg in pkgutil.walk_packages(path=[os.path.dirname(encodings.__file__)], prefix='')])
-                all_encodings = modnames.union(set(encodings.aliases.aliases.values()))
-
+                # Those encondings will be tried
+                all_encodings=['utf_8', 'latin_1', 'ascii', 'utf_16', 'utf_32', 'iso8859_2', 'utf_8_sig' 'utf_16_be', 'utf_16_le', 'utf_32_be', 'utf_32_le',
+                               'iso8859_3', 'iso8859_4', 'iso8859_5', 'iso8859_6', 'iso8859_7', 'iso8859_8', 'iso8859_9', 'iso8859_10', 'iso8859_11', 'iso8859_12',
+                               'iso8859_13', 'iso8859_14', 'iso8859_15', 'iso8859_16']
                 for pc in cache['cache']:
                     if cache['cache'][pc][SAMPLE.file] is not None and cache['cache'][pc][SAMPLE.file] not in cache['source']:
                         targetFile = None
@@ -321,13 +329,14 @@ class elfCache:
                                         cache['source'][sourcePath] = []
                                         for i, line in enumerate(fp):
                                             cache['source'][sourcePath].append(line.strip('\r\n'))
+                                    # print(f"Opened file {targetFile} with encoding {enc}")
                                     decoded=True
                                     break
                                 except Exception:
                                     pass
                             if not decoded:
                                 cache['source'][sourcePath] = None
-                                raise Exception(f"WARNING: could not decode source code {localFileCache[sourcePath][0]}")
+                                raise Exception(f"could not decode source code {localFileCache[sourcePath][0]}")
 
             # Fourth Step, basic block reconstruction
             if basicblockReconstruction:

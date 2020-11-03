@@ -95,7 +95,10 @@ cacheMap = {}
 annotatedProfile = None
 
 for i, fileProfile in enumerate(args.profiles):
-    profile = pickle.load(xopen(fileProfile, mode="rb"))
+    try:
+        profile = pickle.load(xopen(fileProfile, mode="rb"))
+    except:
+        raise Exception(f'Could not read file {fileProfile}')
 
     if i == 0 and len(args.profiles) == 1 and 'version' in profile and profile['version'] == profileLib.annProfileVersion:
         annotatedProfile = profile
@@ -127,17 +130,17 @@ if annotatedProfile is None:
    
     # aggregateKeys = [profileLib.SAMPLE.binary, profileLib.SAMPLE.file, profileLib.SAMPLE.function, profileLib.SAMPLE.pc]
     annotatedProfile = {
-       'version': profileLib.annProfileVersion,
-       'samples': 0,
-       'samplingTime': 0,
-       'latencyTime': 0,
-       'annotate': args.annotate,
-       'annotation': {},
-       'energy': 0,
-       'power': 0,
-       'name': None,
-       'target': None,
-       'toolchain': None,
+        'version': profileLib.annProfileVersion,
+        'samples': 0,
+        'samplingTime': 0,
+        'latencyTime': 0,
+        'asm': {},
+        'source': {},
+        'energy': 0,
+        'power': 0,
+        'name': None,
+        'target': None,
+        'toolchain': None,
     }
 
     elfCache = profileLib.elfCache()

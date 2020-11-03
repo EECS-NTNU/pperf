@@ -37,8 +37,8 @@ parser.add_argument("-o", "--output", help="output profile")
 parser.add_argument("-v", "--vmmap", help="vmmap from profiling run")
 parser.add_argument("-ks", "--kallsyms", help="parse with kernel symbol file")
 parser.add_argument("-c", "--cpus", help="list of active cpu cores", default=None)
-parser.add_argument("--disable-unwind-inline", action="store_true", help="do not unwind inlined functions (disables cache)")
-parser.add_argument("--disable-cache", action="store_true", help="do not create or use address caches")
+parser.add_argument("--unwind-inline", action="store_true", help="unwind inlined functions", default=False)
+parser.add_argument("--disable-cache", action="store_true", help="do not create or use prepared address caches", default=False)
 
 args = parser.parse_args()
 
@@ -63,9 +63,9 @@ if (args.power_sensor is not False and args.power_sensor <= 0):
 
 if args.disable_cache:
     profileLib.disableCache = True
-if args.disable_unwind_inline:
-    profileLib.disableCache = True
-    profileLib.disableInlineUnwinding = True
+
+if args.unwind_inline:
+    profileLib.unwindInline = True
 
 if (not args.search_path):
     args.search_path = []
