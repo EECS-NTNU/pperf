@@ -31,6 +31,16 @@ crossCompile = "" if 'CROSS_COMPILE' not in os.environ else os.environ['CROSS_CO
 cacheFolder = str(pathlib.Path.home()) + "/.cache/pperf/" if 'PPERF_CACHE' not in os.environ else os.environ['PPERF_CACHE']
 _toolchainVersion = None
 
+
+class AGGSAMPLE:
+    time         = 0
+    power        = 1
+    energy       = 2
+    samples      = 3
+    execs        = 4
+    label        = 5
+    mappedSample = 6
+
 class SAMPLE:
     pc          = 0 # int
     binary      = 1 # str
@@ -42,6 +52,17 @@ class SAMPLE:
     meta        = 7 # int
     names = ['pc', 'binary', 'file', 'function', 'basicblock', 'line', 'instruction', 'meta']
     invalid = [None, None, None, None, None, None, None]
+
+class META:
+    normalInstruction    = 0
+    branchInstruction    = 1
+    branchTarget         = 2
+    dynamicBranchTarget  = 4
+    functionHead         = 8
+    functionBack         = 16
+    basicblockHead       = 32
+    basicblockBack       = 64
+
 
 def getToolchainVersion():
     global _toolchainVersion
@@ -185,15 +206,8 @@ class elfCache:
 
         try:
 
-            # Basic Block Reconstruction
-            ADDRESS_NORMAL = 0
-            ADDRESS_BRANCH = 1
-            ADDRESS_TARGET = 2
-            ADDRESS_FHEAD  = 4
-
             functionCounter = -1
-            basicblockCounter = 0
-           
+
             cache = {
                 'version': cacheVersion,
                 'binary': os.path.basename(elf),
@@ -228,10 +242,10 @@ class elfCache:
                 if match0:
                     # Instruction can be reliably splitted of the second match
                     funcAndInstr = match0.group(2).rsplit(' ', 1)
-                    meta = ADDRESS_NORMAL
+                    meta = META.normalInstruction
                     match1 = funcOffset.match(funcAndInstr[0])
                     if match1.group(2) is None:
-                        meta |= ADDRESS_FHEAD
+                        meta |= META.functionHead | META.basicblockHead
                         functionCounter += 1
                     pc = int(match0.group(1), 16)
                     # match 3 the pc offset in the function, not used here
@@ -368,7 +382,7 @@ class elfCache:
                 for pc in cache['cache']:
                     instruction = cache['cache'][pc][SAMPLE.instruction].lower()
                     if instruction in self.archBranches[cache['arch']]['all']:
-                        cache['cache'][pc][SAMPLE.meta] |= ADDRESS_BRANCH
+                        cache['cache'][pc][SAMPLE.meta] |= META.branchInstruction
                         asm = cache['asm'][pc].split('\t')
                         if instruction not in self.archBranches[cache['arch']]['remote'] and len(asm) >= 2:
                             branched = False
@@ -376,7 +390,7 @@ class elfCache:
                                 try:
                                     branchTarget = int(argument.strip(), 16)
                                     if branchTarget in cache['cache']:
-                                        cache['cache'][branchTarget][SAMPLE.meta] |= ADDRESS_TARGET
+                                        cache['cache'][branchTarget][SAMPLE.meta] |= META.branchTarget
                                         branched = True
                                         break
                                     else:
@@ -394,17 +408,18 @@ class elfCache:
                 for pc in dynmap:
                     if pc not in cache['cache']:
                         raise Exception('address 0x{pc:x} from dynamic branch informations is unknown')
-                    if verbose and not cache['cache'][pc][SAMPLE.meta] & ADDRESS_BRANCH:
+                    if not cache['cache'][pc][SAMPLE.meta] & META.branchInstruction:
                         raise Exception('dynamic branch information provided an unknown branch at 0x{pc:x}')
-                    cache['cache'][pc][SAMPLE.meta] |= ADDRESS_BRANCH
+                    # With the Exception this is unecessary
+                    # cache['cache'][pc][SAMPLE.meta] |= META.branchInstruction
                     for target in dynmap[pc]:
                         if target not in cache['cache']:
                             raise Exception('address 0x{target:x} from dynamic branch informations is unknown')
-                        if not cache['cache'][target][SAMPLE.meta] & ADDRESS_TARGET and not cache['cache'][target][SAMPLE.meta] & ADDRESS_FHEAD:
+                        if not cache['cache'][target][SAMPLE.meta] & META.branchTarget and not cache['cache'][target][SAMPLE.meta] & META.functionHead:
                             newBranchTargets.append(target)
                         else:
                             knownBranchTargets.append(target)
-                        cache['cache'][target][SAMPLE.meta] |= ADDRESS_TARGET
+                        cache['cache'][target][SAMPLE.meta] |= META.dynamicBranchTarget
                 if verbose and len(newBranchTargets) > 0:
                     print(f"INFO: {len(newBranchTargets)} new branch targets were identified with dynamic branch information ({', '.join([f'0x{x:x}' for x in newBranchTargets])})", file=sys.stderr)
                 if verbose and len(knownBranchTargets) > 0:
@@ -415,15 +430,24 @@ class elfCache:
 
                 # Second pass to resolve the basic blocks
                 basicblockCount = 0
+                prevPc = None
                 for pc in cache['cache']:
-                    meta = cache['cache'][pc][SAMPLE.meta]
-                    if meta & ADDRESS_FHEAD:
+                    # If function head, we reset the basicblock counter to zero (functions are already a basicblock)
+                    if cache['cache'][pc][SAMPLE.meta] & META.functionHead:
                         basicblockCount = 0
-                    elif meta & ADDRESS_TARGET:
+                        cache['cache'][pc][SAMPLE.meta] |= META.basicblockHead
+                        if prevPc is not None:
+                            cache['cache'][prevPc][SAMPLE.meta] |= META.functionBack | META.basicblockBack
+                    # Else, if instruction is a branch target or the previous is a branch we increase the basicblock counter
+                    elif (cache['cache'][pc][SAMPLE.meta] & META.branchTarget) or (cache['cache'][pc][SAMPLE.meta] & META.dynamicBranchTarget) or (prevPc is not None and cache['cache'][prevPc][SAMPLE.meta] & META.branchInstruction):
                         basicblockCount += 1
+                        cache['cache'][pc][SAMPLE.meta] |= META.basicblockHead
+                        if prevPc is not None:
+                            cache['cache'][prevPc][SAMPLE.meta] |= META.basicblockBack
+
                     cache['cache'][pc][SAMPLE.basicblock] += f'b{basicblockCount}'
-                    if meta & ADDRESS_BRANCH:
-                        basicblockCount += 1
+                    prevPc = pc
+
             if not disableCache:
                 pickle.dump(cache, open(cacheFile, "wb"), pickle.HIGHEST_PROTOCOL)
             self.caches[elf] = cache

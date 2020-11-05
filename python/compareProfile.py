@@ -13,7 +13,7 @@ import operator
 import collections
 import profileLib
 import statistics
-
+from xopen import xopen
 
 def error(baseline, value, totalBaseline, totalValue, weight):
     return value - baseline
@@ -122,9 +122,10 @@ parser.add_argument("--time-threshold", help="time contribution threshold to inc
 parser.add_argument("--limit-energy-top", help="include top n entries ranked after energy", type=int, default=0)
 parser.add_argument("--limit-energy", help="include top entries until limit (in percent, e.g. 0.0 - 1.0)", type=float, default=0)
 parser.add_argument("--energy-threshold", help="energy contribution threshold (in percent, e.g. 0.0 - 1.0)", type=float, default=0)
-parser.add_argument("--exclude-kernel", help="exclude kernel symbols from comparison", action="store_true", default=False)
-parser.add_argument("--exclude-foreign", help="exclude foreign symbols from comparison", action="store_true", default=False)
-parser.add_argument("--exclude-unknown", help="exclude unknown symbols from comparison", action="store_true", default=False)
+parser.add_argument("--exclude-binary", help="exclude these binaries", default=[], action="append")
+parser.add_argument("--exclude-file", help="exclude these files", default=[], action="append")
+parser.add_argument("--exclude-function", help="exclude these functions", default=[], action="append")
+parser.add_argument("--exclude-external", help="exclude external binaries", default=False, action="store_true")
 parser.add_argument('--names', help='names of the provided profiles',default=[], nargs="+")
 parser.add_argument('-n', '--name', action='append', help='name the provided profiles', default=[])
 parser.add_argument("-t", "--table", help="output csv table")
@@ -215,11 +216,10 @@ if (not args.profiles) or (len(args.profiles) <= 0):
     parser.print_help()
     sys.exit(1)
 
-
-if args.profile.endswith(".bz2"):
-    baselineProfile = pickle.load(bz2.BZ2File(args.profile, mode="rb"))
-else:
-    baselineProfile = pickle.load(open(args.profile, mode="rb"))
+try:
+    baselineProfile = pickle.load(xopen(args.profile, mode="rb"))
+except:
+    raise Exception(f'Could not open file {args.profile}')
 
 if 'version' not in baselineProfile or baselineProfile['version'] != profileLib.aggProfileVersion:
     raise Exception(f"Incompatible profile version (required: {profileLib.aggProfileVersion})")
@@ -247,15 +247,15 @@ baselineChart = copy.deepcopy(chart)
 baselineChart['name'] = f"{baselineProfile['samples'] / baselineProfile['samplingTime']:.2f} Hz, {baselineProfile['samplingTime']:.2f} s, {baselineProfile['latencyTime'] * 1000000 / baselineProfile['samples']:.2f} us"
 
 if (args.limit_energy != 0 or args.limit_energy_top != 0):
-    baselineProfile['profile'] = collections.OrderedDict(sorted(baselineProfile['profile'].items(), key=lambda x: operator.itemgetter(profileLib.aggEnergy)(x[1]), reverse=True))
+    baselineProfile['profile'] = collections.OrderedDict(sorted(baselineProfile['profile'].items(), key=lambda x: operator.itemgetter(profileLib.AGGSAMPLE.energy)(x[1]), reverse=True))
 else:
-    baselineProfile['profile'] = collections.OrderedDict(sorted(baselineProfile['profile'].items(), key=lambda x: operator.itemgetter(profileLib.aggTime)(x[1]), reverse=True))
+    baselineProfile['profile'] = collections.OrderedDict(sorted(baselineProfile['profile'].items(), key=lambda x: operator.itemgetter(profileLib.AGGSAMPLE.time)(x[1]), reverse=True))
 
 
 for key in baselineProfile['profile']:
-    baselineChart['fullTotals'][cmpTime] += baselineProfile['profile'][key][profileLib.aggTime]
-    baselineChart['fullTotals'][cmpEnergy] += baselineProfile['profile'][key][profileLib.aggEnergy]
-    baselineChart['fullTotals'][cmpExecs] += baselineProfile['profile'][key][profileLib.aggExecs]
+    baselineChart['fullTotals'][cmpTime] += baselineProfile['profile'][key][profileLib.AGGSAMPLE.time]
+    baselineChart['fullTotals'][cmpEnergy] += baselineProfile['profile'][key][profileLib.AGGSAMPLE.energy]
+    baselineChart['fullTotals'][cmpExecs] += baselineProfile['profile'][key][profileLib.AGGSAMPLE.execs]
 baselineChart['fullTotals'][cmpRelSamples] = 1
 baselineChart['fullTotals'][cmpPower] = (baselineChart['fullTotals'][cmpEnergy] / baselineChart['fullTotals'][cmpTime])
 
@@ -272,10 +272,10 @@ for index, errorChart in enumerate(errorCharts):
     print(f"Compare profile {i}/{len(args.profiles)}...\r", end="")
     i += 1
 
-    if args.profiles[index].endswith(".bz2"):
-        profile = pickle.load(bz2.BZ2File(args.profiles[index], mode="rb"))
-    else:
-        profile = pickle.load(open(args.profiles[index], mode="rb"))
+    try:
+        profile = pickle.load(xopen(args.profiles[index], mode="rb"))
+    except:
+        raise Exception(f'Could not open file {args.profiles[index]}')
 
     if 'version' not in profile or profile['version'] != profileLib.aggProfileVersion:
         raise Exception(f"Incompatible profile version (required: {profileLib.aggProfileVersion})")
@@ -286,9 +286,9 @@ for index, errorChart in enumerate(errorCharts):
         errorCharts[index]['name'] = f"{profile['samples'] / profile['samplingTime']:.2f} Hz, {profile['samplingTime']:.2f} s"
 
     for key in profile['profile']:
-        errorChart['fullTotals'][cmpTime] += profile['profile'][key][profileLib.aggTime]
-        errorChart['fullTotals'][cmpEnergy] += profile['profile'][key][profileLib.aggEnergy]
-        errorChart['fullTotals'][cmpExecs] += profile['profile'][key][profileLib.aggExecs]
+        errorChart['fullTotals'][cmpTime] += profile['profile'][key][profileLib.AGGSAMPLE.time]
+        errorChart['fullTotals'][cmpEnergy] += profile['profile'][key][profileLib.AGGSAMPLE.energy]
+        errorChart['fullTotals'][cmpExecs] += profile['profile'][key][profileLib.AGGSAMPLE.execs]
     errorChart['fullTotals'][cmpRelSamples] = 1
     errorChart['fullTotals'][cmpPower] = (errorChart['fullTotals'][cmpEnergy] / errorChart['fullTotals'][cmpTime])
 
@@ -297,28 +297,45 @@ for index, errorChart in enumerate(errorCharts):
             # Key never seen before, so add it to the baseline and all charts
             if key not in baselineChart['keys']:
                 # Key was never compared before, check thresholds and limitations whether to include or not
-                if (
-                        (args.exclude_kernel and key.startswith(profileLib.LABEL_KERNEL)) or
-                        (args.exclude_foreign and key.startswith(profileLib.LABEL_FOREIGN)) or
-                        (args.exclude_unknown and key.startswith(profileLib.LABEL_UNKNOWN)) or
-                        ((args.limit_time_top != 0) and (includedKeys >= args.limit_time_top)) or
-                        ((args.limit_energy_top != 0) and (includedKeys >= args.limit_energy_top)) or
-                        ((args.limit_time != 0) and ((includedBaselineTime / baselineChart['fullTotals'][cmpTime]) >= args.limit_time)) or
-                        ((args.limit_energy != 0) and ((includedBaselineEnergy / baselineChart['fullTotals'][cmpEnergy]) >= args.limit_energy)) or
-                        ((args.time_threshold != 0) and ((baselineProfile['profile'][key][profileLib.aggTime] / baselineChart['fullTotals'][cmpTime]) < args.time_threshold)) or
-                        ((args.energy_threshold != 0) and ((baselineProfile['profile'][key][profileLib.aggEnergy] / baselineChart['fullTotals'][cmpEnergy]) < args.energy_threshold))                ):
+                if args.exclude_external and baselineProfile['profile'][key][profileLib.AGGSAMPLE.mappedSample][profileLib.SAMPLE.binary] != baselineProfile['target']:
+                    continue
+                keep = True
+                for exclude in args.exclude_binary:
+                    if baselineProfile['profile'][key][profileLib.AGGSAMPLE.mappedSample][profileLib.SAMPLE.binary] == exclude:
+                        keep = False
+                        break
+                if not keep:
+                    continue
+                for exclude in args.exclude_file:
+                    if baselineProfile['profile'][key][profileLib.AGGSAMPLE.mappedSample][profileLib.SAMPLE.file] == exclude:
+                        keep = False
+                        break
+                if not keep:
+                    continue
+                for exclude in args.exclude_function:
+                    if baselineProfile['profile'][key][profileLib.AGGSAMPLE.mappedSample][profileLib.SAMPLE.function] == exclude:
+                        keep = False
+                        break
+                if not keep:
+                    continue
+                if (((args.limit_time_top != 0) and (includedKeys >= args.limit_time_top)) or
+                    ((args.limit_energy_top != 0) and (includedKeys >= args.limit_energy_top)) or
+                    ((args.limit_time != 0) and ((includedBaselineTime / baselineChart['fullTotals'][cmpTime]) >= args.limit_time)) or
+                    ((args.limit_energy != 0) and ((includedBaselineEnergy / baselineChart['fullTotals'][cmpEnergy]) >= args.limit_energy)) or
+                    ((args.time_threshold != 0) and ((baselineProfile['profile'][key][profileLib.AGGSAMPLE.time] / baselineChart['fullTotals'][cmpTime]) < args.time_threshold)) or
+                    ((args.energy_threshold != 0) and ((baselineProfile['profile'][key][profileLib.AGGSAMPLE.energy] / baselineChart['fullTotals'][cmpEnergy]) < args.energy_threshold))                ):
                     continue
                 baselineChart['keys'].append(key)
-                baselineChart['labels'].append(baselineProfile['profile'][key][profileLib.aggLabel])
+                baselineChart['labels'].append(baselineProfile['profile'][key][profileLib.AGGSAMPLE.label])
                 baselineChart['values'].append([
-                    baselineProfile['profile'][key][profileLib.aggTime],     # time
-                    baselineProfile['profile'][key][profileLib.aggPower],    # power
-                    baselineProfile['profile'][key][profileLib.aggEnergy],   # energy
-                    baselineProfile['profile'][key][profileLib.aggSamples] / baselineProfile['samples'],  # relSamples
-                    baselineProfile['profile'][key][profileLib.aggTime] / baselineProfile['profile'][key][profileLib.aggExecs]  # execTimes
+                    baselineProfile['profile'][key][profileLib.AGGSAMPLE.time],     # time
+                    baselineProfile['profile'][key][profileLib.AGGSAMPLE.power],    # power
+                    baselineProfile['profile'][key][profileLib.AGGSAMPLE.energy],   # energy
+                    baselineProfile['profile'][key][profileLib.AGGSAMPLE.samples] / baselineProfile['samples'],  # relSamples
+                    baselineProfile['profile'][key][profileLib.AGGSAMPLE.time] / baselineProfile['profile'][key][profileLib.AGGSAMPLE.execs]  # execTimes
                 ])
-                includedBaselineTime += baselineProfile['profile'][key][profileLib.aggTime]
-                includedBaselineEnergy += baselineProfile['profile'][key][profileLib.aggEnergy]
+                includedBaselineTime += baselineProfile['profile'][key][profileLib.AGGSAMPLE.time]
+                includedBaselineEnergy += baselineProfile['profile'][key][profileLib.AGGSAMPLE.energy]
                 includedKeys += 1
                 # print(f'include {key} with now beeing at {includedBaselineTime / baselineChart["fullTotals"][cmpTime]:.3f} time and {includedBaselineEnergy / baselineChart["fullTotals"][cmpEnergy]:.3f} energy')
                 for chart in errorCharts:
@@ -327,16 +344,16 @@ for index, errorChart in enumerate(errorCharts):
             # Index of the key correlates to the errorChart (same order)
             keyIndex = baselineChart['keys'].index(key)
             errorChart['values'][keyIndex] = [
-                profile['profile'][key][profileLib.aggTime],
-                profile['profile'][key][profileLib.aggPower],
-                profile['profile'][key][profileLib.aggEnergy],
-                profile['profile'][key][profileLib.aggSamples] / profile['samples'],
-                profile['profile'][key][profileLib.aggTime] / profile['profile'][key][profileLib.aggExecs]
+                profile['profile'][key][profileLib.AGGSAMPLE.time],
+                profile['profile'][key][profileLib.AGGSAMPLE.power],
+                profile['profile'][key][profileLib.AGGSAMPLE.energy],
+                profile['profile'][key][profileLib.AGGSAMPLE.samples] / profile['samples'],
+                profile['profile'][key][profileLib.AGGSAMPLE.time] / profile['profile'][key][profileLib.AGGSAMPLE.execs]
             ]
             # Totals are the totals of only comparable keys
-            errorChart['totals'][cmpTime] += profile['profile'][key][profileLib.aggTime]
-            errorChart['totals'][cmpEnergy] += profile['profile'][key][profileLib.aggEnergy]
-            errorChart['totals'][cmpExecs] += profile['profile'][key][profileLib.aggTime] / profile['profile'][key][profileLib.aggExecs]
+            errorChart['totals'][cmpTime] += profile['profile'][key][profileLib.AGGSAMPLE.time]
+            errorChart['totals'][cmpEnergy] += profile['profile'][key][profileLib.AGGSAMPLE.energy]
+            errorChart['totals'][cmpExecs] += profile['profile'][key][profileLib.AGGSAMPLE.time] / profile['profile'][key][profileLib.AGGSAMPLE.execs]
         # fullTotals are the metrics of all profile keys
 
     # These can be calculated afterwards

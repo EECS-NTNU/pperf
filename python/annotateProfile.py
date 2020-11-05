@@ -11,6 +11,7 @@ import profileLib
 import gc
 import pandas
 import copy
+import re
 from xopen import xopen
 
 tabulate.PRESERVE_WHITESPACE = True
@@ -20,16 +21,19 @@ aggregateDefault = [profileLib.SAMPLE.names[profileLib.SAMPLE.binary], profileLi
 parser = argparse.ArgumentParser(description="Annotate profiles on asm and source level.")
 parser.add_argument("profiles", help="postprocessed profiles from pperf", nargs="+")
 parser.add_argument("--mode", choices=['mean', 'add'], default='mean', help=f"compute mean profiles or accumulated profiles (default: %(default)s)")
-parser.add_argument("--annotate", choices=['asm', 'source'], default='asm', help=f"what to annotate (default: %(default)s)")
+parser.add_argument("--annotate", choices=['asm'], default='asm', help=f"what to annotate (default: %(default)s)")
 
 #parser.add_argument("-a", "--aggregate", help=f"aggregate symbols (default: %{', '.join(aggregateDefault)}s)", choices=profileLib.SAMPLE.names, nargs="+", default=[])
 #parser.add_argument("-d", "--delimiter", help=f"aggregate symbol delimiter (default '%(default)s')", default=":")
 #parser.add_argument("-ea", "--external-aggregate", help=f"aggregate external symbols (default: %{', '.join(aggregateDefault)}s)", choices=profileLib.SAMPLE.names, nargs="+", default=[])
 #parser.add_argument("-ed", "--external-delimiter", help=f"delimiter for external symbols (default: ':')", default=None)
 
-parser.add_argument("--share", default=False, action="store_true" , help="display metirc shares")
+parser.add_argument("--precision", type=int, default=4, help="display precision for time and energy (default: %(default)s)")
+parser.add_argument("--share-precision", type=int, default=2, help="display precision for shares (default: %(default)s)")
+parser.add_argument("--share", default=False, action="store_true", help="display metirc shares")
 parser.add_argument("--no-share", default=False, action="store_true" , help="hide metric shares (default)")
-parser.add_argument("-s", "--show", choices=['time', 'energy', 'samples'], default=['time', 'samples'], nargs="+", help="show time, energy and/or samples")
+parser.add_argument("-s", "--show", choices=['time', 'energy', 'samples'], default=['samples'], nargs="+", help="show time, energy and/or samples")
+parser.add_argument("--meta", default=False, action="store_true", help="display meta informations")
 
 parser.add_argument("--binary-time-threshold", type=float, help="include binaries with at least this runtime (default %(default)s)", default=0)
 parser.add_argument("--binary-energy-threshold", type=float, help="include binaries with at least this energy consumption (default %(default)s)", default=0)
@@ -72,6 +76,12 @@ if not args.share and not args.no_share:
 
 if args.share:
     args.no_share = False
+
+if args.precision < 0:
+    raise Exception('negative precision not allowed')
+if args.share_precision < 0:
+    raise Exception('negative share precision not allowed')
+
 
 if args.annotate == 'source':
     raise Exception('source annotation is currently not supported, coming soon...')
@@ -150,7 +160,7 @@ if annotatedProfile is None:
     annotation = pandas.DataFrame()
 
     print('Reading in assembly and source', flush=True, file=sys.stderr)
-    asm = pandas.concat([pandas.DataFrame(cache['cache'].values(), columns=['pc', 'binary', 'file', 'function', 'basicblock', 'line', 'instruction', 'meta']).drop(['meta'], axis=1) for cache in caches.values()], ignore_index=True)
+    asm = pandas.concat([pandas.DataFrame(cache['cache'].values(), columns=['pc', 'binary', 'file', 'function', 'basicblock', 'line', 'instruction', 'meta']) for cache in caches.values()], ignore_index=True)
     asm['args'] = asm.apply(lambda r: '' if '\t' not in caches[r['binary']]['asm'][r['pc']] else caches[r['binary']]['asm'][r['pc']].split('\t', 1)[1].replace('\t',' '), axis=1)
     source = pandas.concat([pandas.DataFrame({'binary': b, 'file': f, 'line': range(1, len(caches[b]['source'][f])+1), 'source' : caches[b]['source'][f]}) for b in caches for f in caches[b]['source'] if caches[b]['source'][f] is not None], ignore_index=True)
 
@@ -217,7 +227,7 @@ if annotatedProfile is None:
     source[['time', 'energy', 'samples']] = source[['time', 'energy', 'samples']].fillna(0)
 
     # Line must be object
-    annotatedProfile['asm'] = asm.astype({'pc': 'uint64', 'binary': 'object', 'file': 'object', 'function': 'object', 'basicblock': 'object', 'line': 'uint64', 'instruction': 'object', 'args': 'object', 'time': 'float64', 'energy': 'float64', 'samples': 'float64'})
+    annotatedProfile['asm'] = asm.astype({'pc': 'uint64', 'binary': 'object', 'file': 'object', 'function': 'object', 'basicblock': 'object', 'line': 'uint64', 'instruction': 'object', 'meta': 'uint64', 'args': 'object', 'time': 'float64', 'energy': 'float64', 'samples': 'float64'})
     annotatedProfile['source'] = source.astype({'binary': 'object', 'file': 'object', 'line': 'uint64', 'source': 'object', 'time': 'float64', 'energy': 'float64', 'samples': 'uint64'})
 
     del aggregate
@@ -271,21 +281,39 @@ if args.instruction_sample_threshold > 0:
 
 order = asm.groupby(['binary', 'function'])['samples'].sum().sort_values(ascending=False).reset_index()
 
+
+metaNames = {
+    profileLib.META.branchInstruction        : 'BRANCH',
+    profileLib.META.branchTarget             : 'TARGET',
+    profileLib.META.dynamicBranchTarget      : 'DYN_TARGET',
+    profileLib.META.functionHead             : 'FN_HEAD',
+    profileLib.META.functionBack             : 'FN_BACK',
+    profileLib.META.basicblockHead           : 'BB_HEAD',
+    profileLib.META.basicblockBack           : 'BB_BACK',
+}
+
 pandas.options.mode.chained_assignment = None
 asm['pc'] = asm['pc'].apply('0x{:x}'.format)
+if args.meta:
+    asm['meta'] = asm['meta'].apply(lambda x: metaNames[x] if x in metaNames else ', '.join([metaNames[nk] for nk in [k for k in metaNames.keys() if k & x]]))
 
-columns = (((['_tshare_' + x for x in args.show]) + (['_bshare_' + x for x in args.show]) + (['_fshare_' + x for x in args.show])) if args.share else []) + args.show + ['pc', 'basicblock', 'instruction', 'args']
+columns = (((['_tshare_' + x for x in args.show]) + (['_bshare_' + x for x in args.show]) + (['_fshare_' + x for x in args.show])) if args.share else []) + \
+    args.show + \
+    ['pc', 'basicblock'] + \
+    (['meta'] if args.meta else []) + \
+    ['instruction', 'args']
 
-shareFloatFmt = "3.2f"
+tabulateStyle = 'presto'
+shareFloatFmt = f'3.{args.share_precision}f'
 columnNames = {'time': 'Time [s]', 'energy': 'Energy [J]', 'samples': 'Samples #'}
-columnFmts = {'time' : '10.4f', 'energy' : '10.4f', 'samples' : '10.0f'}
+columnFmts = {'time' : f'10.{args.precision}f', 'energy' : f'10.{args.share_precision}f', 'samples' : '.0f'}
 stats = { 'time' : annotatedProfile['asm']['time'].sum(), 'energy': annotatedProfile['asm']['energy'].sum(), 'samples': annotatedProfile['asm']['samples'].sum()}
 
 # print('=' * 80)
 print(tabulate.tabulate([
     [(stats[x]) for x in args.show]
     + ['Total']
-], tablefmt="simple", headers=[columnNames[x] for x in args.show] + [''], floatfmt=[columnFmts[x] for x in args.show]))
+], tablefmt=tabulateStyle, headers=[columnNames[x] for x in args.show] + [''], floatfmt=[columnFmts[x] for x in args.show]))
 
 print('')
 
@@ -298,7 +326,7 @@ for bi, binary in enumerate(order['binary'].unique()):
         ([(bStats[x] * 100 / stats[x]) for x in args.show] if args.share else [])
         + [(bStats[x]) for x in args.show]
         + [binary]
-    ], tablefmt="simple", headers=(['(%)'] * len(args.show) if args.share else []) + [columnNames[x] for x in args.show] + [''], floatfmt=([shareFloatFmt] * len(args.show) if args.share else []) + [columnFmts[x] for x in args.show], showindex=False))
+    ], tablefmt=tabulateStyle, headers=(['(%)'] * len(args.show) if args.share else []) + [columnNames[x] for x in args.show] + [''], floatfmt=([shareFloatFmt] * len(args.show) if args.share else []) + [columnFmts[x] for x in args.show], showindex=False))
     print('')
 
     if binary == annotatedProfile['target'] and args.level == 'binary':
@@ -314,7 +342,7 @@ for bi, binary in enumerate(order['binary'].unique()):
             ([(fStats[x] * 100 / stats[x]) for x in args.show] if args.share else [])
             + ([(fStats[x] * 100 / bStats[x]) for x in args.show] if args.share else [])
             + [(fStats[x]) for x in args.show] + [function]
-        ], tablefmt="simple", headers=(['(%)'] * 2 * len(args.show) if args.share else []) + [columnNames[x] for x in args.show] + [''], floatfmt=([shareFloatFmt] * 2 * len(args.show) if args.share else []) + [columnFmts[x] for x in args.show], showindex=False))
+        ], tablefmt=tabulateStyle, headers=(['(%)'] * 2 * len(args.show) if args.share else []) + [columnNames[x] for x in args.show] + [''], floatfmt=([shareFloatFmt] * 2 * len(args.show) if args.share else []) + [columnFmts[x] for x in args.show], showindex=False))
         print('')
 
         if binary == annotatedProfile['target'] and args.level == 'function':
@@ -329,7 +357,13 @@ for bi, binary in enumerate(order['binary'].unique()):
                 fAsm['_fshare_' + x] = fAsm.apply(lambda r: r[x] * 100/ fStats[x], axis=1)
 
         fAsm = fAsm.replace({'basicblock': r'^f[0-9]+b'}, {'basicblock': ''}, regex=True)
-        print(tabulate.tabulate(fAsm[columns], tablefmt='simple', headers = ((['(%)'] * 3 * len(args.show)) if args.share else []) + [columnNames[x] for x in args.show] + ['Addr', 'BB', 'Instr', 'Asm'], floatfmt=([shareFloatFmt] * 3 * len(args.show) if args.share else []) + [columnFmts[x] for x in args.show], showindex=False))
+        print(
+           # re.sub(
+           #     r' 0.00 ',
+           #     '      ',
+                tabulate.tabulate(fAsm[columns], tablefmt=tabulateStyle, headers = ((['(%)'] * 3 * len(args.show)) if args.share else []) + [columnNames[x] for x in args.show] + ['Addr', 'BB'] + ['Meta'] + ['Instr', 'Asm'], floatfmt=([shareFloatFmt] * 3 * len(args.show) if args.share else []) + [columnFmts[x] for x in args.show], showindex=False)
+           # )
+        )
         print('')
 
 exit(0)

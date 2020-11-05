@@ -37,8 +37,8 @@ parser.add_argument("-o", "--output", help="write postprocessed profile")
 parser.add_argument("-c", "--cpus", help="list of active cpu cores", default="0-3")
 parser.add_argument("-l", "--little-endian", action="store_true", help="parse profile using little endianess")
 parser.add_argument("-b", "--big-endian", action="store_true", help="parse profile using big endianess")
-parser.add_argument("--unwind-inline", action="store_true", help="unwind inlined functions (disables cache)")
-parser.add_argument("--disable-cache", action="store_true", help="do not create or use address caches")
+parser.add_argument("--unwind-inline", action="store_true", help="unwind inlined functions (disables cache)", default=False)
+parser.add_argument("--disable-cache", action="store_true", help="do not create or use address caches", default=False)
 
 parser.add_argument("--dump-vmmap", help="dump vmmap to file")
 

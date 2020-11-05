@@ -110,15 +110,6 @@ if args.external_delimiter is None:
     args.external_delimiter = args.delimiter
 
 
-class AGGSAMPLE:
-    time = 0
-    power = 1
-    energy = 2
-    samples = 3
-    execs = 4
-    label = 5
-    mappedSample = 6
-   
 aggregatedProfile = {
     'version': profileLib.aggProfileVersion,
     'samples': 0,
@@ -154,7 +145,7 @@ for fileProfile in args.profiles:
     elif aggregatedProfile['toolchain'] != profile['toolchain']:
         aggregatedProfile['toolchain'] = 'various'
 
-    print(f"Aggregate profile {i}/{len(args.profiles)}...\r", end="")
+    print(f"Aggregate profile {i}/{len(args.profiles)}")
     i += 1
 
     if 'version' not in profile or profile['version'] != profileLib.profileVersion:
@@ -235,10 +226,10 @@ for fileProfile in args.profiles:
 
     for key in subAggregate:
         if key in aggregatedProfile['profile']:
-            aggregatedProfile['profile'][key][AGGSAMPLE.time] += subAggregate[key][0] * modeFac
-            aggregatedProfile['profile'][key][AGGSAMPLE.energy] += subAggregate[key][1] * modeFac
-            aggregatedProfile['profile'][key][AGGSAMPLE.samples] += subAggregate[key][2] * modeFac
-            aggregatedProfile['profile'][key][AGGSAMPLE.execs] += subAggregate[key][3] * modeFac
+            aggregatedProfile['profile'][key][profileLib.AGGSAMPLE.time] += subAggregate[key][0] * modeFac
+            aggregatedProfile['profile'][key][profileLib.AGGSAMPLE.energy] += subAggregate[key][1] * modeFac
+            aggregatedProfile['profile'][key][profileLib.AGGSAMPLE.samples] += subAggregate[key][2] * modeFac
+            aggregatedProfile['profile'][key][profileLib.AGGSAMPLE.execs] += subAggregate[key][3] * modeFac
         else:
             aggregatedProfile['profile'][key] = [
                 subAggregate[key][0] * modeFac,
@@ -258,28 +249,28 @@ for fileProfile in args.profiles:
 # aggregated energy and time, turn it to power
 if 'aggregated' not in aggregatedProfile or aggregatedProfile['aggregated'] is False:
     for key in aggregatedProfile['profile']:
-        time = aggregatedProfile['profile'][key][AGGSAMPLE.time]
-        energy = aggregatedProfile['profile'][key][AGGSAMPLE.energy]
-        aggregatedProfile['profile'][key][AGGSAMPLE.power] = energy / time if time != 0 else 0
+        time = aggregatedProfile['profile'][key][profileLib.AGGSAMPLE.time]
+        energy = aggregatedProfile['profile'][key][profileLib.AGGSAMPLE.energy]
+        aggregatedProfile['profile'][key][profileLib.AGGSAMPLE.power] = energy / time if time != 0 else 0
 
     aggregatedProfile['power'] = aggregatedProfile['energy'] / aggregatedProfile['samplingTime']
     aggregatedProfile['aggregated'] = True
 
 values = numpy.array(list(aggregatedProfile['profile'].values()), dtype=object)
 if (args.use_time):
-    values = values[values[:, AGGSAMPLE.time].argsort()]
+    values = values[values[:, profileLib.AGGSAMPLE.time].argsort()]
 else:
-    values = values[values[:, AGGSAMPLE.energy].argsort()]
+    values = values[values[:, profileLib.AGGSAMPLE.energy].argsort()]
 
-times = numpy.array(values[:, AGGSAMPLE.time], dtype=float)
-powers = numpy.array(values[:, AGGSAMPLE.power], dtype=float)
-energies = numpy.array(values[:, AGGSAMPLE.energy], dtype=float)
-samples = numpy.array(values[:, AGGSAMPLE.samples], dtype=float)
-execs = numpy.array(values[:, AGGSAMPLE.execs], dtype=float)
-aggregationLabel = values[:, AGGSAMPLE.label]
+times = numpy.array(values[:, profileLib.AGGSAMPLE.time], dtype=float)
+powers = numpy.array(values[:, profileLib.AGGSAMPLE.power], dtype=float)
+energies = numpy.array(values[:, profileLib.AGGSAMPLE.energy], dtype=float)
+samples = numpy.array(values[:, profileLib.AGGSAMPLE.samples], dtype=float)
+execs = numpy.array(values[:, profileLib.AGGSAMPLE.execs], dtype=float)
+aggregationLabel = values[:, profileLib.AGGSAMPLE.label]
 
 if len(args.exclude_binary) > 0 or len(args.exclude_file) > 0 or len(args.exclude_function) > 0 or args.exclude_external:
-    mappedSamples = values[:, AGGSAMPLE.mappedSample]
+    mappedSamples = values[:, profileLib.AGGSAMPLE.mappedSample]
     keep = numpy.ones(aggregationLabel.shape, dtype=bool)
     for i, mappedSample in enumerate(mappedSamples):
         if args.exclude_external and mappedSample[profileLib.SAMPLE.binary] != aggregatedProfile['target']:

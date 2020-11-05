@@ -69,10 +69,6 @@ for i, fileProfile in enumerate(args.profiles):
         print(f"    Date:         {profile['date']}")
         print(f"    Inlines:      {profile['unwindInline']}")
         print(f"    Files:        {', '.join([os.path.basename(x) for x in profile['source']])}")
-        #for f in profile['source']:
-        #    print(f'File {f} has {len(profile["source"][f])}')
-        #    for l in profile["source"][f]:
-        #        print(l)
         print(f"    ASM Lines:    {len(profile['asm'])}")
         print(f"    Source Lines: {sum([len(profile['source'][x]) for x in profile['source']])}")
 
