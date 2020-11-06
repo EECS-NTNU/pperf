@@ -16,9 +16,9 @@ aggregateDefault = [profileLib.SAMPLE.names[profileLib.SAMPLE.binary], profileLi
 parser = argparse.ArgumentParser(description="Aggregate full profiles, accumulate or average multiple profiles.")
 parser.add_argument("profiles", help="postprocessed profiles from pperf", nargs="+")
 parser.add_argument("--mode", choices=['mean', 'add'], default='mean', help=f"compute mean or accumulated profiles (%(default)s)")
-parser.add_argument("-a", "--aggregate", help=f"aggregate symbols (default: %{', '.join(aggregateDefault)}s)", choices=profileLib.SAMPLE.names, nargs="+", default=[])
+parser.add_argument("-a", "--aggregate", help=f"aggregate symbols (default: {' '.join(aggregateDefault)})", choices=profileLib.SAMPLE.names, nargs="+", default=[])
 parser.add_argument("-d", "--delimiter", help=f"aggregate symbol delimiter (default '%(default)s')", default=":")
-parser.add_argument("-ea", "--external-aggregate", help=f"aggregate external symbols (default: %{', '.join(aggregateDefault)}s)", choices=profileLib.SAMPLE.names, nargs="+", default=[])
+parser.add_argument("-ea", "--external-aggregate", help=f"aggregate external symbols (default: {' '.join(aggregateDefault)})", choices=profileLib.SAMPLE.names, nargs="+", default=[])
 parser.add_argument("-ed", "--external-delimiter", help=f"delimiter for external symbols (default: ':')", default=None)
 
 parser.add_argument("--label-none", help=f"label none data (default '%(default)s')", default="_unknown")
