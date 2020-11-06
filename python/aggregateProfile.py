@@ -133,8 +133,10 @@ else:
 
 i = 1
 for fileProfile in args.profiles:
-    profile = {}
-    profile = pickle.load(xopen(fileProfile, mode="rb"))
+    try:
+        profile = pickle.load(xopen(fileProfile, mode="rb"))
+    except:
+        raise Exception(f'Could not read file {fileProfile}')
 
     if i == 1 and 'version' in profile and profile['version'] == profileLib.aggProfileVersion and len(args.profiles) == 1:
         aggregatedProfile = profile

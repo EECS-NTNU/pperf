@@ -129,14 +129,10 @@ parser.add_argument("--exclude-external", help="exclude external binaries", defa
 parser.add_argument('--names', help='names of the provided profiles',default=[], nargs="+")
 parser.add_argument('-n', '--name', action='append', help='name the provided profiles', default=[])
 parser.add_argument("-t", "--table", help="output csv table")
-parser.add_argument("-p", "--plot", help="plotly html file")
 parser.add_argument("--coverage", action="store_true", help="output coverage", default=False)
 parser.add_argument("--totals", action="store_true", help="output total", default=False)
 parser.add_argument("--weights", action="store_true", help="output importance", default=False)
-parser.add_argument("-q", "--quiet", action="store_true", help="do not automatically open plot file", default=False)
-parser.add_argument("--export", help="export plot (pdf, svg, png,...)")
-parser.add_argument("--width", help="export width", type=int, default=1500)
-parser.add_argument("--height", help="export height", type=int)
+parser.add_argument("-q", "--quiet", action="store_true", help="be quiet", default=False)
 parser.add_argument("--cut-off-symbols", help="number of characters symbol to insert line break (positive) or cut off (negative)", type=int, default=64)
 
 
@@ -206,7 +202,7 @@ if (args.energy_threshold != 0 and (args.energy_threshold < 0 or args.energy_thr
     parser.print_help()
     sys.exit(0)
 
-if (args.quiet and not args.plot and not args.table and not args.export):
+if (args.quiet and not args.table):
     print("ERROR: don't know what to do")
     parser.print_help()
     sys.exit(1)
@@ -440,105 +436,26 @@ if aggregateFunction is not False:
     rows = numpy.append(rows, errors.reshape(-1, 1), axis=1)
     headers = numpy.array([header], dtype=object)
 
-if (args.plot or args.export):
-    import plotly
-    import plotly.graph_objs as go
-    import plotlyExport
-    plotly.io.templates.default = 'plotly_white'
 
-    fig = {'data': []}
-    if (args.cut_off_symbols > 0):
-        pAggregationLabel = [textwrap.fill(x, args.cut_off_symbols).replace('\n', '<br />') for x in rows[:, 0]]
-        leftMargin = min(abs(args.cut_off_symbols), numpy.max([len(x) for x in rows[:, 0]]))
-    elif (args.cut_off_symbols < 0):
-        pAggregationLabel = [f"{x[0:abs(args.cut_off_symbols)]}..." if len(x) > abs(args.cut_off_symbols) else x for x in rows[:, 0]]
-        leftMargin = min(abs(args.cut_off_symbols) + 3, numpy.max([len(x) for x in rows[:, 0]]))
-    else:
-        pAggregationLabel = rows[:, 0]
-        leftMargin = numpy.max([len(x) for x in pAggregationLabel])
-
-    indices = [i for i, _ in enumerate(rows[:, 0])]
-
-    for index, name in enumerate(headers):
-        pBarLabels = [(f'{t * 100:.2f}%' if isinstance(t, float) else t) for t in barLabels[:, index]]
-        fig["data"].append(
-            go.Bar(
-                y=indices,
-                x=rows[:, (index + 1)],
-                name=name,
-                text=pBarLabels,
-                textposition='auto',
-                orientation='h',
-                hoverinfo='name+x' if aggregateFunction is False else 'y+x'
-            )
-        )
-
-    fig['layout'] = go.Layout(
-        title=go.layout.Title(
-            text=f"{header}, {baselineProfile['name']}, Frequency {baselineProfile['samples'] / baselineProfile['samplingTime']:.2f} Hz, Time {baselineProfile['samplingTime']:.2f} s, Energy {baselineChart['fullTotals'][cmpEnergy]:.2f} J, Latency {baselineProfile['latencyTime'] * 1000000 / baselineProfile['samples']:.2f} us",
-            xref='paper',
-            x=0
-        ),
-        xaxis=go.layout.XAxis(
-            title=go.layout.xaxis.Title(
-                text=header,
-                font=dict(
-                    family='Courier New, monospace',
-                    size=18,
-                    color='black'  # '#7f7f7f'
-                )
-            )
-        ),
-        yaxis=go.layout.YAxis(
-            tickfont=dict(
-                family='monospace',
-                size=12,
-                color='black'
-            ),
-            ticktext=pAggregationLabel,
-            tickvals=indices
-        ),
-        legend=go.layout.Legend(traceorder="reversed"),
-        margin=go.layout.Margin(l=10 + (7.00 * leftMargin))
-    )
-    if (args.export):
-        plotlyExport.exportFigure(
-            go.Figure(fig).update_layout(title=None, margin_t=0, margin_r=0),
-            args.width if args.width else None,
-            args.height if args.height else None,
-            args.export,
-            not args.quiet
-        )
-        print(f"Exported to {args.export}")
-
-    if (args.plot):
-        plotly.offline.plot(fig, filename=args.plot, auto_open=not args.quiet)
-        print(f"Plot saved to {args.plot}")
-
-    del pAggregationLabel
-    del fig
-
-
-if (args.table or not args.quiet):
-    if aggregateFunction is False:
-        if args.totals:
-            total = ['_total']
-            for i in range(1, len(rows[0])):
-                total = numpy.append(total, numpy.sum(numpy.array(rows[:, (i)], dtype=float)))
-            weights = numpy.concatenate(([[0] * (len(total) - 1)], weights), axis=0)
-            rows = numpy.concatenate(([total], rows), axis=0)
-        if args.coverage:
-            coverage = ['_coverage']
-            coverage.extend([chart['totals'][cmpOffset] / chart['fullTotals'][cmpOffset] if chart['fullTotals'][cmpOffset] != 0 else 0 for chart in errorCharts])
-            weights = numpy.concatenate(([[0] * (len(coverage) - 1)], weights), axis=0)
-            rows = numpy.concatenate(([coverage], rows), axis=0)
-        if args.weights:
-            for i in range(0, len(rows[0]) - 1):
-                headers = numpy.insert(headers, (i * 2), 'Weights')
-                rows = numpy.insert(rows, (i * 2) + 1, weights[:, i], axis=1)
-    else:
-        header = "Profile"
-        rows = rows[::-1]
+if aggregateFunction is False:
+    if args.totals:
+        total = ['_total']
+        for i in range(1, len(rows[0])):
+            total = numpy.append(total, numpy.sum(numpy.array(rows[:, (i)], dtype=float)))
+        weights = numpy.concatenate(([[0] * (len(total) - 1)], weights), axis=0)
+        rows = numpy.concatenate(([total], rows), axis=0)
+    if args.coverage:
+        coverage = ['_coverage']
+        coverage.extend([chart['totals'][cmpOffset] / chart['fullTotals'][cmpOffset] if chart['fullTotals'][cmpOffset] != 0 else 0 for chart in errorCharts])
+        weights = numpy.concatenate(([[0] * (len(coverage) - 1)], weights), axis=0)
+        rows = numpy.concatenate(([coverage], rows), axis=0)
+    if args.weights:
+        for i in range(0, len(rows[0]) - 1):
+            headers = numpy.insert(headers, (i * 2), 'Weights')
+            rows = numpy.insert(rows, (i * 2) + 1, weights[:, i], axis=1)
+else:
+    header = "Profile"
+    rows = rows[::-1]
 
 if (args.table):
     if args.table.endswith("bz2"):

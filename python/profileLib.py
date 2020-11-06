@@ -151,7 +151,7 @@ class elfCache:
         if not self.cacheAvailable(elf):
             if disableCache:
                 print(f"WARNING: cache disabled, constructing limited in memory cache", file=sys.stderr)
-                self.createCache(elf, verbose=False)
+                self.createCache(elf, basicblockReconstruction = False, includeSource=False, verbose=False)
             else:
                 raise Exception(f'could not find cache for file {elf}, please create first or run with disabled cache')
        

@@ -169,7 +169,10 @@ if annotatedProfile is None:
     for i, profile in enumerate(inputProfiles):
         print(f'\rParsing profile {i+1}/{len(inputProfiles)}... ', flush=True, file=sys.stderr)
         if profile is None:
-            profile = pickle.load(xopen(args.profiles[i], mode="rb"))
+            try:
+                profile = pickle.load(xopen(args.profiles[i], mode="rb"))
+            except:
+                raise Exception(f'Could not read file {args.profiles[i]}')
 
         if annotatedProfile['toolchain'] is None:
             annotatedProfile['toolchain'] = profile['toolchain']
