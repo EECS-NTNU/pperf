@@ -161,7 +161,7 @@ if annotatedProfile is None:
 
     print('Reading in assembly and source', flush=True, file=sys.stderr)
     asm = pandas.concat([pandas.DataFrame(cache['cache'].values(), columns=['pc', 'binary', 'file', 'function', 'basicblock', 'line', 'instruction', 'meta']) for cache in caches.values()], ignore_index=True)
-    asm['args'] = asm.apply(lambda r: '' if '\t' not in caches[r['binary']]['asm'][r['pc']] else caches[r['binary']]['asm'][r['pc']].split('\t', 1)[1].replace('\t',' '), axis=1)
+    asm['args'] = asm.apply(lambda r: (re.split(' |\t', caches[r['binary']]['asm'][r['pc']], 1) + [''])[1].strip(), axis=1)
     source = pandas.concat([pandas.DataFrame({'binary': b, 'file': f, 'line': range(1, len(caches[b]['source'][f])+1), 'source' : caches[b]['source'][f]}) for b in caches for f in caches[b]['source'] if caches[b]['source'][f] is not None], ignore_index=True)
 
     aggregate = {}
@@ -364,7 +364,8 @@ for bi, binary in enumerate(order['binary'].unique()):
            # re.sub(
            #     r' 0.00 ',
            #     '      ',
-                tabulate.tabulate(fAsm[columns], tablefmt=tabulateStyle, headers = ((['(%)'] * 3 * len(args.show)) if args.share else []) + [columnNames[x] for x in args.show] + ['Addr', 'BB'] + ['Meta'] + ['Instr', 'Asm'], floatfmt=([shareFloatFmt] * 3 * len(args.show) if args.share else []) + [columnFmts[x] for x in args.show], showindex=False)
+                tabulate.tabulate(fAsm[columns], tablefmt=tabulateStyle,
+                                  headers = ((['(%)'] * 3 * len(args.show)) if args.share else []) + [columnNames[x] for x in args.show] + ['Addr', 'BB'] + (['Meta'] if args.meta else []) + ['Instr', 'Asm'], floatfmt=([shareFloatFmt] * 3 * len(args.show) if args.share else []) + [columnFmts[x] for x in args.show], showindex=False)
            # )
         )
         print('')

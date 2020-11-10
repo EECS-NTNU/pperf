@@ -236,7 +236,7 @@ class elfCache:
             # sObjdump = re.sub('[ \t]+(# ).+\n','\n', sObjdump)
 
             for line in sObjdump.split('\n'):
-                objdumpInstruction = re.compile('([0-9a-fA-F]+) (<.+?(\+0x[0-9a-f-A-F]+)?> [^\t]+)(\t[^<\t]+)?(.+)?')
+                objdumpInstruction = re.compile('([0-9a-fA-F]+) (<.+?(\+0x[0-9a-f-A-F]+)?> [^\t ]+)(\t[^<\t]+)?(.+)?')
                 funcOffset = re.compile('^<(.+?)(\+0x[0-9a-f-A-F]+)?>$')
                 match0 = objdumpInstruction.match(line)
                 if match0:
