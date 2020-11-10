@@ -155,13 +155,12 @@ if annotatedProfile is None:
 
     elfCache = profileLib.elfCache()
     caches = { binary: elfCache.getRawCache(cacheMap[binary]) for binary in cacheMap }
-
     # annotation = pandas.DataFrame(columns=['pc', 'binary', 'file', 'function', 'basicblock', 'line', 'instruction', 'meta', 'asm', 'source', 'time', 'energy', 'samples'])
     annotation = pandas.DataFrame()
 
     print('Reading in assembly and source', flush=True, file=sys.stderr)
-    asm = pandas.concat([pandas.DataFrame(cache['cache'].values(), columns=['pc', 'binary', 'file', 'function', 'basicblock', 'line', 'instruction', 'meta']) for cache in caches.values()], ignore_index=True)
-    asm['args'] = asm.apply(lambda r: (re.split(' |\t', caches[r['binary']]['asm'][r['pc']], 1) + [''])[1].strip(), axis=1)
+    asm = pandas.concat([pandas.DataFrame([[cacheName] + vals for vals in cache['cache'].values()], columns=['cache', 'pc', 'binary', 'file', 'function', 'basicblock', 'line', 'instruction', 'meta']) for cacheName, cache  in caches.items()], ignore_index=True)
+    asm['args'] = asm.apply(lambda r: (re.split(' |\t', caches[r['cache']]['asm'][r['pc']], 1) + [''])[1].strip(), axis=1)
     source = pandas.concat([pandas.DataFrame({'binary': b, 'file': f, 'line': range(1, len(caches[b]['source'][f])+1), 'source' : caches[b]['source'][f]}) for b in caches for f in caches[b]['source'] if caches[b]['source'][f] is not None], ignore_index=True)
 
     aggregate = {}
@@ -230,7 +229,7 @@ if annotatedProfile is None:
     source[['time', 'energy', 'samples']] = source[['time', 'energy', 'samples']].fillna(0)
 
     # Line must be object
-    annotatedProfile['asm'] = asm.astype({'pc': 'uint64', 'binary': 'object', 'file': 'object', 'function': 'object', 'basicblock': 'object', 'line': 'uint64', 'instruction': 'object', 'meta': 'uint64', 'args': 'object', 'time': 'float64', 'energy': 'float64', 'samples': 'float64'})
+    annotatedProfile['asm'] = asm.astype({'cache': 'object', 'pc': 'uint64', 'binary': 'object', 'file': 'object', 'function': 'object', 'basicblock': 'object', 'line': 'uint64', 'instruction': 'object', 'meta': 'uint64', 'args': 'object', 'time': 'float64', 'energy': 'float64', 'samples': 'float64'})
     annotatedProfile['source'] = source.astype({'binary': 'object', 'file': 'object', 'line': 'uint64', 'source': 'object', 'time': 'float64', 'energy': 'float64', 'samples': 'uint64'})
 
     del aggregate
