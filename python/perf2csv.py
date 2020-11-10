@@ -153,7 +153,12 @@ for line in perf.stdout:
             seenCpus.append(sampleCpu)
         samples.append([sampleTime, sampleCpu, samplePc])
 
+        if targetParentId is None and len(samples) >= 10000:
+            raise Exception(f"ERROR: '{args.target}' target binary was not detected after the first 10000 samples")
+
     # print(f"Type {sampleType}, Source {sampleSource}, Time {sampleTime}, ParentId {sampleParentId}, ThreadId {sampleThreadId}, PC {samplePc}, BaseAddr {sampleMmapBaseAddr}, Length {sampleMmapLength}, Target {sampleMmapTarget}")
+if targetParentId is None:
+    raise Exception(f"ERROR: '{args.target}' target binary was not detected")
 
 if len(seenCpus) == 0:
     raise Exception(f"ERROR: could not extract any samples from {args.perfdata}, maybe profile perf version is incompatible with local perf")

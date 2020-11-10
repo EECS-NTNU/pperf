@@ -107,7 +107,7 @@ class elfCache:
         'AArch64': {
             # These instruction divert the control flow of the application
             'all' : {'b', 'b.eq', 'b.ne', 'b.cs', 'b.hs', 'b.cc', 'b.lo', 'b.mi', 'b.pl', 'b.vs', 'b.vc', 'b.hi', 'b.ls', 'b.ge', 'b.lt', 'b.gt', 'b.le', 'b.al', 'b.nv', 'bl', 'br', 'blr', 'svc', 'brk', 'ret', 'cbz', 'cbnz', 'tbnz'},
-            # These instructions are dynamic branches that can only divert control flow towards a function or after a branch instruction
+            # These instructions are dynamic branches that can only divert control flow towards the head of a basicblock/function or after another branch instruction
             'remote' : {'svc', 'brk', 'blr', 'ret'},
         },
         'RISC-V': {
