@@ -59,7 +59,7 @@ for i, fileProfile in enumerate(args.profiles):
         print(f"    Caches:       {profile['cacheMap']}")
     elif profile['version'] == profileLib.aggProfileVersion:
         print(f"    Volts:        {profile['volts']}")
-        print(f"    Mean:         {profile['mean']}")
+        print(f"    Averaged:     {profile['averaged']}")
     elif profile['version'] == profileLib.annProfileVersion:
         pass
     elif profile['version'] == profileLib.cacheVersion:

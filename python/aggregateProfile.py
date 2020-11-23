@@ -43,6 +43,7 @@ parser.add_argument("--cut-off-symbols", help="number of characters symbol to in
 parser.add_argument("--account-latency", action="store_true", help="substract latency")
 parser.add_argument("--use-wall-time", action="store_true", help="use sample wall time")
 parser.add_argument("--use-cpu-time", action="store_true", help="use cpu time (default)")
+parser.add_argument("--less-memory", action="store_true", help="use less memory", default=False)
 
 
 args = parser.parse_args()
@@ -121,37 +122,64 @@ aggregatedProfile = {
     'volts': 0,
     'name': False,
     'target': False,
-    'mean': len(args.profiles),
-    'aggregated': False,
+    'averaged': 0, # Number of profiles averaged
     'toolchain': 'various',
 }
 
-if args.mode == 'add':
-    modeFac = 1
-else:
-    modeFac = 1 / aggregatedProfile['mean']
+profiles = []
 
-i = 1
-for fileProfile in args.profiles:
+preAggregated = False
+
+for i, fileProfile in enumerate(args.profiles):
     try:
         profile = pickle.load(xopen(fileProfile, mode="rb"))
     except:
         raise Exception(f'Could not read file {fileProfile}')
 
-    if i == 1 and 'version' in profile and profile['version'] == profileLib.aggProfileVersion and len(args.profiles) == 1:
-        aggregatedProfile = profile
-        break
+    if 'version' not in profile or (profile['version'] != profileLib.profileVersion and profile['version'] != profileLib.aggProfileVersion):
+        raise Exception(f"Incompatible profile version {'None' if 'version' not in profile else profile['version']}")
 
-    if i == 1:
+    if profile['version'] == profileLib.aggProfileVersion:
+        aggregatedProfile['averaged'] += profile['averaged']
+    else:
+        aggregatedProfile['averaged'] += 1
+
+    profiles.append(None if args.less_memory else profile)
+    if args.less_memory:
+        del profile
+        gc.collect()
+
+
+for i, profile in enumerate(profiles):
+    if args.mode == 'add':
+        modeFac = 1
+    else:
+        modeFac = 1 / aggregatedProfile['averaged']
+
+    if profile is None:
+        try:
+            profile = pickle.load(xopen(args.profiles[i], mode="rb"))
+        except:
+            raise Exception(f'Could not read file {args.profile[i]}')
+
+    subAggregate = None
+
+    if profile['version'] == profileLib.aggProfileVersion:
+        if len(profiles) == 1:
+            aggregatedProfile = profile
+            preAggregated = True
+            break
+        else:
+            subAggregate = profile['profile']
+            if args.mode == 'mean':
+               modeFac = profile['averaged'] / aggregatedProfile['averaged']
+
+    if i == 0:
         aggregatedProfile['toolchain'] = profile['toolchain']
     elif aggregatedProfile['toolchain'] != profile['toolchain']:
         aggregatedProfile['toolchain'] = 'various'
 
-    print(f"Aggregate profile {i}/{len(args.profiles)}")
-    i += 1
-
-    if 'version' not in profile or profile['version'] != profileLib.profileVersion:
-        raise Exception(f"Incompatible profile version (required: {profileLib.profileVersion})")
+    print(f"Aggregate profile {i+1}/{len(args.profiles)} with {modeFac:.2f} weight")
 
     if not aggregatedProfile['target']:
         aggregatedProfile['name'] = profile['name']
@@ -161,102 +189,103 @@ for fileProfile in args.profiles:
     if (profile['volts'] != aggregatedProfile['volts']):
         print("ERROR: profile voltages don't match!")
 
-    sampleFormatter = profileLib.sampleFormatter(profile['maps'])
-
     aggregatedProfile['latencyTime'] += profile['latencyTime'] * modeFac
     aggregatedProfile['samplingTime'] += profile['samplingTime'] * modeFac
     aggregatedProfile['samples'] += profile['samples'] * modeFac
-    if ('energy' in profile):
-        aggregatedProfile['energy'] += profile['energy'] * modeFac
-    avgLatencyTime = profile['latencyTime'] / profile['samples']
+    aggregatedProfile['energy'] += profile['energy'] * modeFac
+    aggregatedProfile['power'] = aggregatedProfile['energy'] / aggregatedProfile['samplingTime']
 
-    subAggregate = {}
-    threadLocations = {}
-    prevSampleWallTime = None
-    for sample in profile['profile']:
-        activeCores = min(len(sample[2]), profile['cpus'])
+    if subAggregate is None:
+        subAggregate = {}
+        sampleFormatter = profileLib.sampleFormatter(profile['maps'])
+        avgLatencyTime = profile['latencyTime'] / profile['samples']
 
-        if prevSampleWallTime is None:
+        threadLocations = {}
+        prevSampleWallTime = None
+        for sample in profile['profile']:
+            activeCores = min(len(sample[2]), profile['cpus'])
+
+            if prevSampleWallTime is None:
+                prevSampleWallTime = sample[1]
+
+            sampleWallTime = sample[1] - prevSampleWallTime
             prevSampleWallTime = sample[1]
+            for thread in sample[2]:
+                threadId = thread[0]
+                if args.use_cpu_time:
+                    # Thread CPU Time
+                    useSampleTime = thread[1]
+                else:
+                    # Sample Wall Time
+                    useSampleTime = sampleWallTime
 
-        sampleWallTime = sample[1] - prevSampleWallTime
-        prevSampleWallTime = sample[1]
-        for thread in sample[2]:
-            threadId = thread[0]
-            if args.use_cpu_time:
-                # Thread CPU Time
-                useSampleTime = thread[1]
-            else:
-                # Sample Wall Time
-                useSampleTime = sampleWallTime
+                if args.account_latency:
+                    useSampleTime = max(useSampleTime - avgLatencyTime, 0.0)
 
-            if args.account_latency:
-                useSampleTime = max(useSampleTime - avgLatencyTime, 0.0)
+                cpuShare = (useSampleTime / (sampleWallTime * activeCores)) if sampleWallTime != 0 else 0
 
-            cpuShare = (useSampleTime / (sampleWallTime * activeCores)) if sampleWallTime != 0 else 0
+                mappedSample = sampleFormatter.remapSample(thread[2])
+                if mappedSample[profileLib.SAMPLE.binary] == profile['target']:
+                    aggregateIndex = sampleFormatter.formatSample(mappedSample, displayKeys=args.aggregate, delimiter=args.delimiter, labelNone=args.label_none)
+                else:
+                    aggregateIndex = sampleFormatter.formatSample(mappedSample, displayKeys=args.external_aggregate, delimiter=args.external_delimiter, labelNone=args.label_none)
 
-            mappedSample = sampleFormatter.remapSample(thread[2])
-            if mappedSample[profileLib.SAMPLE.binary] == profile['target']:
-                aggregateIndex = sampleFormatter.formatSample(mappedSample, displayKeys=args.aggregate, delimiter=args.delimiter, labelNone=args.label_none)
-            else:
-                aggregateIndex = sampleFormatter.formatSample(mappedSample, displayKeys=args.external_aggregate, delimiter=args.external_delimiter, labelNone=args.label_none)
+                if threadId not in threadLocations:
+                    threadLocations[threadId] = None
 
-            if threadId not in threadLocations:
-                threadLocations[threadId] = None
+                if aggregateIndex not in subAggregate:
+                    subAggregate[aggregateIndex] = [
+                        useSampleTime,  # total execution time
+                        0,
+                        sample[0] * cpuShare * useSampleTime,  # energy (later power)
+                        1,
+                        1,
+                        aggregateIndex,
+                        mappedSample
+                    ]
+                else:
+                    subAggregate[aggregateIndex][profileLib.AGGSAMPLE.time] += useSampleTime
+                    subAggregate[aggregateIndex][profileLib.AGGSAMPLE.energy] += sample[0] * cpuShare * useSampleTime
+                    subAggregate[aggregateIndex][profileLib.AGGSAMPLE.samples] += 1
+                    if threadLocations[threadId] != aggregateIndex:
+                        subAggregate[aggregateIndex][profileLib.AGGSAMPLE.execs] += 1
 
-            if aggregateIndex not in subAggregate:
-                subAggregate[aggregateIndex] = [
-                    useSampleTime,  # total execution time
-                    sample[0] * cpuShare * useSampleTime,  # energy (later power)
-                    1,
-                    1,
-                    aggregateIndex,
-                    mappedSample
-                ]
-            else:
-                subAggregate[aggregateIndex][0] += useSampleTime
-                subAggregate[aggregateIndex][1] += sample[0] * cpuShare * useSampleTime
-                subAggregate[aggregateIndex][2] += 1
-                if threadLocations[threadId] != aggregateIndex:
-                    subAggregate[aggregateIndex][3] += 1
+                threadLocations[threadId] = aggregateIndex
 
-            threadLocations[threadId] = aggregateIndex
-
-    del sampleFormatter
-    del profile
-    gc.collect()
+        del sampleFormatter
+        del profile
+        gc.collect()
 
     for key in subAggregate:
         if key in aggregatedProfile['profile']:
-            aggregatedProfile['profile'][key][profileLib.AGGSAMPLE.time] += subAggregate[key][0] * modeFac
-            aggregatedProfile['profile'][key][profileLib.AGGSAMPLE.energy] += subAggregate[key][1] * modeFac
-            aggregatedProfile['profile'][key][profileLib.AGGSAMPLE.samples] += subAggregate[key][2] * modeFac
-            aggregatedProfile['profile'][key][profileLib.AGGSAMPLE.execs] += subAggregate[key][3] * modeFac
+            aggregatedProfile['profile'][key][profileLib.AGGSAMPLE.time] += subAggregate[key][profileLib.AGGSAMPLE.time] * modeFac
+            aggregatedProfile['profile'][key][profileLib.AGGSAMPLE.power] += subAggregate[key][profileLib.AGGSAMPLE.power] * modeFac
+            aggregatedProfile['profile'][key][profileLib.AGGSAMPLE.energy] += subAggregate[key][profileLib.AGGSAMPLE.energy] * modeFac
+            aggregatedProfile['profile'][key][profileLib.AGGSAMPLE.samples] += subAggregate[key][profileLib.AGGSAMPLE.samples] * modeFac
+            aggregatedProfile['profile'][key][profileLib.AGGSAMPLE.execs] += subAggregate[key][profileLib.AGGSAMPLE.execs] * modeFac
         else:
             aggregatedProfile['profile'][key] = [
-                subAggregate[key][0] * modeFac,
-                0,
-                subAggregate[key][1] * modeFac,
-                subAggregate[key][2] * modeFac,
-                subAggregate[key][3] * modeFac,
-                subAggregate[key][4],
-                subAggregate[key][5]
+                subAggregate[key][profileLib.AGGSAMPLE.time] * modeFac,
+                subAggregate[key][profileLib.AGGSAMPLE.power] * modeFac,
+                subAggregate[key][profileLib.AGGSAMPLE.energy] * modeFac,
+                subAggregate[key][profileLib.AGGSAMPLE.samples] * modeFac,
+                subAggregate[key][profileLib.AGGSAMPLE.execs] * modeFac,
+                subAggregate[key][profileLib.AGGSAMPLE.label],
+                subAggregate[key][profileLib.AGGSAMPLE.mappedSample]
             ]
 
     del subAggregate
     gc.collect()
 
-# aggregatedProfile['profile'][key] = [time, power, energy, samples, executions, label]
+del profiles
+gc.collect()
 
 # aggregated energy and time, turn it to power
-if 'aggregated' not in aggregatedProfile or aggregatedProfile['aggregated'] is False:
+if not preAggregated:
     for key in aggregatedProfile['profile']:
         time = aggregatedProfile['profile'][key][profileLib.AGGSAMPLE.time]
         energy = aggregatedProfile['profile'][key][profileLib.AGGSAMPLE.energy]
         aggregatedProfile['profile'][key][profileLib.AGGSAMPLE.power] = energy / time if time != 0 else 0
-
-    aggregatedProfile['power'] = aggregatedProfile['energy'] / aggregatedProfile['samplingTime']
-    aggregatedProfile['aggregated'] = True
 
 values = numpy.array(list(aggregatedProfile['profile'].values()), dtype=object)
 if (args.use_time):

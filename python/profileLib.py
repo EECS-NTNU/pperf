@@ -22,7 +22,7 @@ LABEL_UNSUPPORTED = '_unsupported'
 
 cacheVersion = 'c0.2'
 profileVersion = '0.5'
-aggProfileVersion = 'agg0.8'
+aggProfileVersion = 'agg0.9'
 annProfileVersion = 'ann0.1'
 
 unwindInline = True if 'UNWIND_INLINE' in os.environ and os.environ['UNWIND_INLINE'] == '1' else False

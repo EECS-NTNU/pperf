@@ -188,8 +188,8 @@ for sample in csvProfile:
 
     wallTime = float(sample[timeColumn])
 
-    if prevTime is not None and wallTime <= prevTime:
-        print("WARNING: negative sample time for sample at {wallTime:.2f} (samples must be ordered after time)!", file=sys.stderr)
+    if prevTime is not None and wallTime < prevTime:
+        print(f"WARNING: negative sample time for sample at {wallTime:.2f} (samples must be ordered after time)!", file=sys.stderr)
 
     if prevTime is None:
         prevTime = wallTime

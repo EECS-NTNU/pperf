@@ -112,6 +112,7 @@ parser.add_argument("--use-time", help="compare time values", action="store_true
 parser.add_argument("--use-energy", help="compare energy values (default)", action="store_true", default=False)
 parser.add_argument("--use-power", help="compare power values", action="store_true", default=False)
 parser.add_argument("--use-samples", help="compare sample counters", action="store_true", default=False)
+parser.add_argument("--use-share", help="compare the share (is combined with other --use options)", action="store_true", default=False)
 parser.add_argument("--use-exec-times", help="compare execution time", action="store_true", default=False)
 parser.add_argument("-e", "--error", help=f"error function (default: {errorFunctions[0][0]})", default=False, choices=errorFunctions[:, 0], type=str.lower)
 parser.add_argument("-a", "--aggregate", help="aggregate erros", default=False, choices=aggregateFunctions[:, 0], type=str.lower)
@@ -141,6 +142,8 @@ args = parser.parse_args()
 if (not args.use_time and not args.use_energy and not args.use_power and not args.use_samples and not args.use_exec_times):
     args.use_time = True
 
+
+
 header = ""
 
 cmpTime = 0
@@ -148,23 +151,30 @@ cmpPower = 1
 cmpEnergy = 2
 cmpRelSamples = 3
 cmpExecs = 4
+cmpShare = 5
 
-cmpOffset = cmpEnergy
+subCmpOffset = cmpTime
 if args.use_time:
     header = "Time "
-    cmpOffset = cmpTime
+    subCmpOffset = cmpTime
 if args.use_power:
     header = "Power "
-    cmpOffset = cmpPower
+    subCmpOffset = cmpPower
 if args.use_samples:
     header = "Relative Samples "
-    cmpOffset = cmpRelSamples
+    subCmpOffset = cmpRelSamples
 if args.use_exec_times:
     header = "Execution Times "
-    cmpOffset = cmpExecs
+    subCmpOffset = cmpExecs
 if args.use_energy:
     header = "Energy "
-    cmpOffset = cmpEnergy
+    subCmpOffset = cmpEnergy
+
+cmpOffset = subCmpOffset
+
+if args.use_share:
+    header += "share "
+    cmpOffset = cmpShare
 
 if (args.limit_time != 0 or args.limit_time_top != 0) and (args.limit_energy != 0 or args.limit_energy_top != 0):
     print("ERROR: cannot simultanously limit after energy and time!")
@@ -328,7 +338,8 @@ for index, errorChart in enumerate(errorCharts):
                     baselineProfile['profile'][key][profileLib.AGGSAMPLE.power],    # power
                     baselineProfile['profile'][key][profileLib.AGGSAMPLE.energy],   # energy
                     baselineProfile['profile'][key][profileLib.AGGSAMPLE.samples] / baselineProfile['samples'],  # relSamples
-                    baselineProfile['profile'][key][profileLib.AGGSAMPLE.time] / baselineProfile['profile'][key][profileLib.AGGSAMPLE.execs]  # execTimes
+                    baselineProfile['profile'][key][profileLib.AGGSAMPLE.time] / baselineProfile['profile'][key][profileLib.AGGSAMPLE.execs],  # execTimes
+                    0 # Share (will be filled in later)
                 ])
                 includedBaselineTime += baselineProfile['profile'][key][profileLib.AGGSAMPLE.time]
                 includedBaselineEnergy += baselineProfile['profile'][key][profileLib.AGGSAMPLE.energy]
@@ -344,7 +355,8 @@ for index, errorChart in enumerate(errorCharts):
                 profile['profile'][key][profileLib.AGGSAMPLE.power],
                 profile['profile'][key][profileLib.AGGSAMPLE.energy],
                 profile['profile'][key][profileLib.AGGSAMPLE.samples] / profile['samples'],
-                profile['profile'][key][profileLib.AGGSAMPLE.time] / profile['profile'][key][profileLib.AGGSAMPLE.execs]
+                profile['profile'][key][profileLib.AGGSAMPLE.time] / profile['profile'][key][profileLib.AGGSAMPLE.execs],
+                0
             ]
             # Totals are the totals of only comparable keys
             errorChart['totals'][cmpTime] += profile['profile'][key][profileLib.AGGSAMPLE.time]
@@ -376,7 +388,9 @@ del values
 
 # fill in the weights, based on baseline energy
 for index, _ in enumerate(baselineChart['keys']):
+    baselineChart['values'][index][cmpShare] = baselineChart['values'][subCmpOffset] / baselineChart['totals'][subCmpOffset]
     for chart in errorCharts:
+        chart['values'][index][cmpShare] = chart['values'][subCmpOffset] / chart['totals'][subCmpOffset]
         if args.limit_energy:
             chart['weights'].append(chart['values'][index][cmpEnergy] / baselineChart['fullTotals'][cmpEnergy])
         else:
