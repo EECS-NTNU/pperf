@@ -173,7 +173,7 @@ if args.use_energy:
 cmpOffset = subCmpOffset
 
 if args.use_share:
-    header += "share "
+    header += "Share "
     cmpOffset = cmpShare
 
 if (args.limit_time != 0 or args.limit_time_top != 0) and (args.limit_energy != 0 or args.limit_energy_top != 0):
@@ -248,7 +248,7 @@ if args.error is not False:
     chosenErrorFunction = errorFunctions[numpy.where(errorFunctions == args.error)[0][0]]
     errorFunction = chosenErrorFunction[2]
 
-chart = {'name': '', 'fullTotals': [0.0, 0.0, 0.0, 0.0, 0.0], 'totals': [0.0, 0.0, 0.0, 0.0, 0.0], 'keys': [], 'labels': [], 'values': [], 'errors': [], 'weights': []}
+chart = {'name': '', 'fullTotals': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], 'totals': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], 'keys': [], 'labels': [], 'values': [], 'errors': [], 'weights': []}
 baselineChart = copy.deepcopy(chart)
 baselineChart['name'] = f"{baselineProfile['samples'] / baselineProfile['samplingTime']:.2f} Hz, {baselineProfile['samplingTime']:.2f} s, {baselineProfile['latencyTime'] * 1000000 / baselineProfile['samples']:.2f} us"
 
@@ -264,9 +264,10 @@ for key in baselineProfile['profile']:
     baselineChart['fullTotals'][cmpExecs] += baselineProfile['profile'][key][profileLib.AGGSAMPLE.execs]
 baselineChart['fullTotals'][cmpRelSamples] = 1
 baselineChart['fullTotals'][cmpPower] = (baselineChart['fullTotals'][cmpEnergy] / baselineChart['fullTotals'][cmpTime])
+baselineChart['fullTotals'][cmpShare] = 1
 
 
-chart = {'name': '', 'fullTotals': [0.0, 0.0, 0.0, 0.0, 0.0], 'totals': [0.0, 0.0, 0.0, 0.0, 0.0], 'values': [], 'errors': [], 'weights': []}
+chart = {'name': '', 'fullTotals': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], 'totals': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], 'values': [], 'errors': [], 'weights': []}
 errorCharts = [copy.deepcopy(chart) for x in args.profiles]
 
 includedBaselineTime = 0.0
@@ -296,6 +297,7 @@ for index, errorChart in enumerate(errorCharts):
         errorChart['fullTotals'][cmpEnergy] += profile['profile'][key][profileLib.AGGSAMPLE.energy]
         errorChart['fullTotals'][cmpExecs] += profile['profile'][key][profileLib.AGGSAMPLE.execs]
     errorChart['fullTotals'][cmpRelSamples] = 1
+    errorChart['fullTotals'][cmpShare] = 1
     errorChart['fullTotals'][cmpPower] = (errorChart['fullTotals'][cmpEnergy] / errorChart['fullTotals'][cmpTime])
 
     for key in baselineProfile['profile']:
@@ -367,6 +369,7 @@ for index, errorChart in enumerate(errorCharts):
     # These can be calculated afterwards
     errorChart['totals'][cmpPower] = (errorChart['totals'][cmpEnergy] / errorChart['totals'][cmpTime]) if errorChart['totals'][cmpTime] != 0 else 0
     errorChart['totals'][cmpRelSamples] = 1
+    errorChart['totals'][cmpShare] = 1
 
     del profile
 
@@ -380,17 +383,19 @@ baselineChart['totals'] = [
     0.0,
     numpy.sum(values[:, 2]),
     1,
-    numpy.sum(values[:, 4])
+    numpy.sum(values[:, 4]),
+    1
 ]
 baselineChart['totals'][cmpPower] = (baselineChart['totals'][cmpEnergy] / baselineChart['totals'][cmpTime]) if baselineChart['totals'][cmpTime] != 0 else 0
 baselineChart['totals'][cmpRelSamples] = 1
+baselineChart['totals'][cmpShare] = 1
 del values
 
 # fill in the weights, based on baseline energy
 for index, _ in enumerate(baselineChart['keys']):
-    baselineChart['values'][index][cmpShare] = baselineChart['values'][subCmpOffset] / baselineChart['totals'][subCmpOffset]
+    baselineChart['values'][index][cmpShare] = baselineChart['values'][index][subCmpOffset] / baselineChart['totals'][subCmpOffset]
     for chart in errorCharts:
-        chart['values'][index][cmpShare] = chart['values'][subCmpOffset] / chart['totals'][subCmpOffset]
+        chart['values'][index][cmpShare] = chart['values'][index][subCmpOffset] / chart['totals'][subCmpOffset]
         if args.limit_energy:
             chart['weights'].append(chart['values'][index][cmpEnergy] / baselineChart['fullTotals'][cmpEnergy])
         else:

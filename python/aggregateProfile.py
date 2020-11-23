@@ -287,6 +287,14 @@ if not preAggregated:
         energy = aggregatedProfile['profile'][key][profileLib.AGGSAMPLE.energy]
         aggregatedProfile['profile'][key][profileLib.AGGSAMPLE.power] = energy / time if time != 0 else 0
 
+if (args.output):
+    output = xopen(args.output, "wb")
+    pickle.dump(aggregatedProfile, output, pickle.HIGHEST_PROTOCOL)
+    print(f"Aggregated profile saved to {args.output}")
+
+if (not args.table and args.quiet):
+    exit(0)
+
 values = numpy.array(list(aggregatedProfile['profile'].values()), dtype=object)
 if (args.use_time):
     values = values[values[:, profileLib.AGGSAMPLE.time].argsort()]
@@ -389,13 +397,6 @@ if cutOff is not None:
     aggregationLabel = aggregationLabel[cutOff:]
     samples = samples[cutOff:]
 
-if (args.output):
-    output = xopen(args.output, "wb")
-    pickle.dump(aggregatedProfile, output, pickle.HIGHEST_PROTOCOL)
-    print(f"Aggregated profile saved to {args.output}")
-
-if (not args.table and args.quiet):
-    exit(0)
 
 aggregationLabel = aggregationLabel[::-1]
 times = times[::-1]
