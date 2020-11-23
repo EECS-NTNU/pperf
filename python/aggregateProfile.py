@@ -140,6 +140,11 @@ for i, fileProfile in enumerate(args.profiles):
         raise Exception(f"Incompatible profile version {'None' if 'version' not in profile else profile['version']}")
 
     if profile['version'] == profileLib.aggProfileVersion:
+        if len(args.profiles) == 1:
+            profiles = []
+            aggreagatedProfile = profile
+            preAggregate = True
+            break
         aggregatedProfile['averaged'] += profile['averaged']
     else:
         aggregatedProfile['averaged'] += 1
@@ -165,14 +170,9 @@ for i, profile in enumerate(profiles):
     subAggregate = None
 
     if profile['version'] == profileLib.aggProfileVersion:
-        if len(profiles) == 1:
-            aggregatedProfile = profile
-            preAggregated = True
-            break
-        else:
-            subAggregate = profile['profile']
-            if args.mode == 'mean':
-               modeFac = profile['averaged'] / aggregatedProfile['averaged']
+        subAggregate = profile['profile']
+        if args.mode == 'mean':
+            modeFac = profile['averaged'] / aggregatedProfile['averaged']
 
     if i == 0:
         aggregatedProfile['toolchain'] = profile['toolchain']

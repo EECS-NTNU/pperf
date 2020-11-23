@@ -142,8 +142,6 @@ args = parser.parse_args()
 if (not args.use_time and not args.use_energy and not args.use_power and not args.use_samples and not args.use_exec_times):
     args.use_time = True
 
-
-
 header = ""
 
 cmpTime = 0
