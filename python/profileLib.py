@@ -386,15 +386,13 @@ class elfCache:
                         asm = cache['asm'][pc].split('\t')
                         if instruction not in self.archBranches[cache['arch']]['remote'] and len(asm) >= 2:
                             branched = False
-                            for argument in re.split(', |,| ',asm[1]):
+                            for argument in reversed(re.split(', |,| ',asm[1])):
                                 try:
                                     branchTarget = int(argument.strip(), 16)
                                     if branchTarget in cache['cache']:
                                         cache['cache'][branchTarget][SAMPLE.meta] |= META.branchTarget
                                         branched = True
                                         break
-                                    else:
-                                        print(f'WARNING: branch target not within file 0x{branchTarget:x}')
                                 except:
                                     pass
                             if not branched and verbose:
@@ -427,6 +425,7 @@ class elfCache:
 
                 if verbose and len(unresolvedBranches) > 0:
                     print(f"WARNING: {len(unresolvedBranches)} dynamic branches might not be resolved! ({', '.join([f'0x{x:x}' for x in unresolvedBranches])})", file=sys.stderr)
+                    # print('\n'.join([cache['asm'][x] for x in unresolvedBranches]))
 
                 # Second pass to resolve the basic blocks
                 basicblockCount = 0

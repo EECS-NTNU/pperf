@@ -131,6 +131,7 @@ for i, fileProfile in enumerate(args.profiles):
 
 
 if annotatedProfile is None:
+
     if not args.use_cpu_time and not args.use_wall_time:
         args.use_cpu_time = True
 
@@ -145,13 +146,16 @@ if annotatedProfile is None:
         'samplingTime': 0,
         'latencyTime': 0,
         'asm': {},
-        'source': {},
+        'source': None,
         'energy': 0,
         'power': 0,
         'name': None,
         'target': None,
         'toolchain': None,
     }
+
+    if len(cacheMap) == 0:
+        raise Exception('Profiles do not contain any samples from a binary!')
 
     elfCache = profileLib.elfCache()
     caches = { binary: elfCache.getRawCache(cacheMap[binary]) for binary in cacheMap }
@@ -161,7 +165,12 @@ if annotatedProfile is None:
     print('Reading in assembly and source', flush=True, file=sys.stderr)
     asm = pandas.concat([pandas.DataFrame([[cacheName] + vals for vals in cache['cache'].values()], columns=['cache', 'pc', 'binary', 'file', 'function', 'basicblock', 'line', 'instruction', 'meta']) for cacheName, cache  in caches.items()], ignore_index=True)
     asm['args'] = asm.apply(lambda r: (re.split(' |\t', caches[r['cache']]['asm'][r['pc']], 1) + [''])[1].strip(), axis=1)
-    source = pandas.concat([pandas.DataFrame({'binary': b, 'file': f, 'line': range(1, len(caches[b]['source'][f])+1), 'source' : caches[b]['source'][f]}) for b in caches for f in caches[b]['source'] if caches[b]['source'][f] is not None], ignore_index=True)
+
+    source = None
+    sourceFrames = [pandas.DataFrame({'binary': b, 'file': f, 'line': range(1, len(caches[b]['source'][f])+1), 'source' : caches[b]['source'][f]}) for b in caches for f in caches[b]['source'] if caches[b]['source'][f] is not None]
+    if len(sourceFrames) > 0:
+        source = pandas.concat(sourceFrames)
+    del sourceFrames
 
     aggregate = {}
 
@@ -221,16 +230,19 @@ if annotatedProfile is None:
 
     print('Correlating data', flush=True, file=sys.stderr)
     asm[['time', 'energy', 'samples']] = asm.apply(lambda r: aggregate[r['binary']][r['pc']] if r['binary'] in aggregate and r['pc'] in aggregate[r['binary']] else [0, 0, 0], axis=1, result_type='expand')
-    source = source.join(asm.groupby(['binary', 'file', 'line'], as_index=False)[['time','energy','samples']].sum().set_index(['binary', 'file', 'line']), on=['binary', 'file', 'line'])
+    if source is not None:
+        source = source.join(asm.groupby(['binary', 'file', 'line'], as_index=False)[['time','energy','samples']].sum().set_index(['binary', 'file', 'line']), on=['binary', 'file', 'line'])
     print('Cleaning up', flush=True, file=sys.stderr)
 
     # Fill in 0 values for time, energy and samples
     asm[['line', 'time', 'energy', 'samples']] = asm[['line', 'time', 'energy', 'samples']].fillna(0)
-    source[['time', 'energy', 'samples']] = source[['time', 'energy', 'samples']].fillna(0)
+    if source is not None:
+        source[['time', 'energy', 'samples']] = source[['time', 'energy', 'samples']].fillna(0)
 
     # Line must be object
     annotatedProfile['asm'] = asm.astype({'cache': 'object', 'pc': 'uint64', 'binary': 'object', 'file': 'object', 'function': 'object', 'basicblock': 'object', 'line': 'uint64', 'instruction': 'object', 'meta': 'uint64', 'args': 'object', 'time': 'float64', 'energy': 'float64', 'samples': 'float64'})
-    annotatedProfile['source'] = source.astype({'binary': 'object', 'file': 'object', 'line': 'uint64', 'source': 'object', 'time': 'float64', 'energy': 'float64', 'samples': 'uint64'})
+    if source is not None:
+        annotatedProfile['source'] = source.astype({'binary': 'object', 'file': 'object', 'line': 'uint64', 'source': 'object', 'time': 'float64', 'energy': 'float64', 'samples': 'uint64'})
 
     del aggregate
     del inputProfiles
@@ -248,17 +260,17 @@ if args.quiet:
 
 
 asm = annotatedProfile['asm']
-source = annotatedProfile['source']
+# source = annotatedProfile['source']
 
 if args.binary_time_threshold > 0:
     asm = asm[asm.groupby(['binary'])['time'].transform('sum') >= args.binary_time_threshold]
-    source = source[source.groupby(['binary'])['time'].transform('sum') >= args.binary_time_threshold]
+    # source = source[source.groupby(['binary'])['time'].transform('sum') >= args.binary_time_threshold]
 if args.binary_energy_threshold > 0:
     asm = asm[asm.groupby(['binary'])['energy'].transform('sum') >= args.binary_energy_threshold]
-    source = source[source.groupby(['binary'])['energy'].transform('sum') >= args.binary_energy_threshold]
+    # source = source[source.groupby(['binary'])['energy'].transform('sum') >= args.binary_energy_threshold]
 if args.binary_sample_threshold > 0:
     asm = asm[asm.groupby(['binary'])['samples'].transform('sum') >= args.binary_sample_threshold]
-    source = source[source.groupby(['binary'])['samples'].transform('sum') >= args.binary_sample_threshold]
+    # source = source[source.groupby(['binary'])['samples'].transform('sum') >= args.binary_sample_threshold]
 
 if args.function_time_threshold > 0:
     asm = asm[asm.groupby(['binary', 'function'])['time'].transform('sum') >= args.function_time_threshold]

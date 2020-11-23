@@ -67,6 +67,8 @@ print("Processing perf raw data...")
 perf = subprocess.Popen([args.perf if args.perf else 'perf', 'report', '--header', '-D', '-i', args.perfdata], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 encoding = args.encoding if args.encoding else None
 
+prevSampleTime  = None
+
 for line in perf.stdout:
     parsed = False
     encodingPass = 0
@@ -151,6 +153,7 @@ for line in perf.stdout:
     if sampleType == 'PERF_RECORD_SAMPLE':
         if sampleCpu not in seenCpus:
             seenCpus.append(sampleCpu)
+
         samples.append([sampleTime, sampleCpu, samplePc])
 
         if targetParentId is None and len(samples) >= 10000:
@@ -162,6 +165,9 @@ if targetParentId is None:
 
 if len(seenCpus) == 0:
     raise Exception(f"ERROR: could not extract any samples from {args.perfdata}, maybe profile perf version is incompatible with local perf")
+
+# Perf raw dump samples are not necessarily ordered
+samples = sorted(samples, key=lambda x: x[0])
 
 if args.output.endswith(".bz2"):
     csvFile = bz2.open(args.output, "wt")

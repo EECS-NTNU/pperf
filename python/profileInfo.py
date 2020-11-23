@@ -68,9 +68,9 @@ for i, fileProfile in enumerate(args.profiles):
         print(f"    Arch:         {profile['arch']}")
         print(f"    Date:         {profile['date']}")
         print(f"    Inlines:      {profile['unwindInline']}")
-        print(f"    Files:        {', '.join([os.path.basename(x) for x in profile['source']])}")
+        print(f"    Files:        {'None' if profile['source'] is None else ', '.join([os.path.basename(x) for x in profile['source']])}")
         print(f"    ASM Lines:    {len(profile['asm'])}")
-        print(f"    Source Lines: {sum([len(profile['source'][x]) for x in profile['source']])}")
+        print(f"    Source Lines: {0 if profile['source'] is None else sum([0 if profile['source'][x] is None else len(profile['source'][x])  for x in profile['source']])}")
 
     print(f"    Toolchain:    {profile['toolchain']}")
 

@@ -145,6 +145,8 @@ if not timeColumn:
 else:
     timeColumn = timeColumn[0]
 
+
+
 for cpu in useCpus:
     if cpu > (len(pcColumns) - 1):
         print(f"ERROR: could not find PC columns for cpu {cpu}")
@@ -185,6 +187,9 @@ for sample in csvProfile:
     i += 1
 
     wallTime = float(sample[timeColumn])
+
+    if prevTime is not None and wallTime <= prevTime:
+        print("WARNING: negative sample time for sample at {wallTime:.2f} (samples must be ordered after time)!", file=sys.stderr)
 
     if prevTime is None:
         prevTime = wallTime
