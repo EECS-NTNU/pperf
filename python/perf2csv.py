@@ -156,9 +156,6 @@ for line in perf.stdout:
 
         samples.append([sampleTime, sampleCpu, samplePc])
 
-        if targetParentId is None and len(samples) >= 10000:
-            raise Exception(f"ERROR: '{args.target}' target binary was not detected after the first 10000 samples")
-
     # print(f"Type {sampleType}, Source {sampleSource}, Time {sampleTime}, ParentId {sampleParentId}, ThreadId {sampleThreadId}, PC {samplePc}, BaseAddr {sampleMmapBaseAddr}, Length {sampleMmapLength}, Target {sampleMmapTarget}")
 if targetParentId is None:
     raise Exception(f"ERROR: '{args.target}' target binary was not detected")

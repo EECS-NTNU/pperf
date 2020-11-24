@@ -123,9 +123,9 @@ parser.add_argument("--time-threshold", help="time contribution threshold to inc
 parser.add_argument("--limit-energy-top", help="include top n entries ranked after energy", type=int, default=0)
 parser.add_argument("--limit-energy", help="include top entries until limit (in percent, e.g. 0.0 - 1.0)", type=float, default=0)
 parser.add_argument("--energy-threshold", help="energy contribution threshold (in percent, e.g. 0.0 - 1.0)", type=float, default=0)
-parser.add_argument("--exclude-binary", help="exclude these binaries", default=[], action="append")
-parser.add_argument("--exclude-file", help="exclude these files", default=[], action="append")
-parser.add_argument("--exclude-function", help="exclude these functions", default=[], action="append")
+parser.add_argument("--exclude-binaries", help="exclude these binaries", default=[], nargs='+', action="extend")
+parser.add_argument("--exclude-files", help="exclude these files", default=[], nargs='+', action="extend")
+parser.add_argument("--exclude-functions", help="exclude these functions", default=[], nargs='+', action="extend")
 parser.add_argument("--exclude-external", help="exclude external binaries", default=False, action="store_true")
 parser.add_argument('--names', help='names of the provided profiles',default=[], nargs="+")
 parser.add_argument('-n', '--name', action='append', help='name the provided profiles', default=[])
@@ -135,7 +135,6 @@ parser.add_argument("--totals", action="store_true", help="output total", defaul
 parser.add_argument("--weights", action="store_true", help="output importance", default=False)
 parser.add_argument("-q", "--quiet", action="store_true", help="be quiet", default=False)
 parser.add_argument("--cut-off-symbols", help="number of characters symbol to insert line break (positive) or cut off (negative)", type=int, default=64)
-
 
 args = parser.parse_args()
 
@@ -250,11 +249,20 @@ chart = {'name': '', 'fullTotals': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], 'totals': [0.
 baselineChart = copy.deepcopy(chart)
 baselineChart['name'] = f"{baselineProfile['samples'] / baselineProfile['samplingTime']:.2f} Hz, {baselineProfile['samplingTime']:.2f} s, {baselineProfile['latencyTime'] * 1000000 / baselineProfile['samples']:.2f} us"
 
-if (args.limit_energy != 0 or args.limit_energy_top != 0):
+if (args.limit_energy > 0 or args.limit_energy_top > 0):
     baselineProfile['profile'] = collections.OrderedDict(sorted(baselineProfile['profile'].items(), key=lambda x: operator.itemgetter(profileLib.AGGSAMPLE.energy)(x[1]), reverse=True))
 else:
     baselineProfile['profile'] = collections.OrderedDict(sorted(baselineProfile['profile'].items(), key=lambda x: operator.itemgetter(profileLib.AGGSAMPLE.time)(x[1]), reverse=True))
 
+filterAnything = args.exclude_external or len(args.exclude_binaries) > 0 or len(args.exclude_files) > 0 or len(args.exclude_functions) > 0
+# Filter out exclude before anything else
+if filterAnything:
+    for key in list(baselineProfile['profile'].keys()):
+        if (args.exclude_external and baselineProfile['profile'][key][profileLib.AGGSAMPLE.mappedSample][profileLib.SAMPLE.binary] != baselineProfile['target']) or \
+           (len(args.exclude_binaries) > 0 and baselineProfile['profile'][key][profileLib.AGGSAMPLE.mappedSample][profileLib.SAMPLE.binary] in args.exclude_binaries) or \
+           (len(args.exclude_files) > 0 and baselineProfile['profile'][key][profileLib.AGGSAMPLE.mappedSample][profileLib.SAMPLE.file] in args.exclude_files) or \
+           (len(args.exclude_functions) > 0 and baselineProfile['profile'][key][profileLib.AGGSAMPLE.mappedSample][profileLib.SAMPLE.function] in args.exclude_functions):
+            del baselineProfile['profile'][key]
 
 for key in baselineProfile['profile']:
     baselineChart['fullTotals'][cmpTime] += baselineProfile['profile'][key][profileLib.AGGSAMPLE.time]
@@ -272,10 +280,8 @@ includedBaselineTime = 0.0
 includedBaselineEnergy = 0.0
 includedKeys = 0
 
-i = 1
 for index, errorChart in enumerate(errorCharts):
-    print(f"Compare profile {i}/{len(args.profiles)}...\r", end="")
-    i += 1
+    # print(f"Compare profile {index+1}/{len(args.profiles)}")
 
     try:
         profile = pickle.load(xopen(args.profiles[index], mode="rb"))
@@ -303,27 +309,6 @@ for index, errorChart in enumerate(errorCharts):
             # Key never seen before, so add it to the baseline and all charts
             if key not in baselineChart['keys']:
                 # Key was never compared before, check thresholds and limitations whether to include or not
-                if args.exclude_external and baselineProfile['profile'][key][profileLib.AGGSAMPLE.mappedSample][profileLib.SAMPLE.binary] != baselineProfile['target']:
-                    continue
-                keep = True
-                for exclude in args.exclude_binary:
-                    if baselineProfile['profile'][key][profileLib.AGGSAMPLE.mappedSample][profileLib.SAMPLE.binary] == exclude:
-                        keep = False
-                        break
-                if not keep:
-                    continue
-                for exclude in args.exclude_file:
-                    if baselineProfile['profile'][key][profileLib.AGGSAMPLE.mappedSample][profileLib.SAMPLE.file] == exclude:
-                        keep = False
-                        break
-                if not keep:
-                    continue
-                for exclude in args.exclude_function:
-                    if baselineProfile['profile'][key][profileLib.AGGSAMPLE.mappedSample][profileLib.SAMPLE.function] == exclude:
-                        keep = False
-                        break
-                if not keep:
-                    continue
                 if (((args.limit_time_top != 0) and (includedKeys >= args.limit_time_top)) or
                     ((args.limit_energy_top != 0) and (includedKeys >= args.limit_energy_top)) or
                     ((args.limit_time != 0) and ((includedBaselineTime / baselineChart['fullTotals'][cmpTime]) >= args.limit_time)) or
@@ -344,9 +329,8 @@ for index, errorChart in enumerate(errorCharts):
                 includedBaselineTime += baselineProfile['profile'][key][profileLib.AGGSAMPLE.time]
                 includedBaselineEnergy += baselineProfile['profile'][key][profileLib.AGGSAMPLE.energy]
                 includedKeys += 1
-                # print(f'include {key} with now beeing at {includedBaselineTime / baselineChart["fullTotals"][cmpTime]:.3f} time and {includedBaselineEnergy / baselineChart["fullTotals"][cmpEnergy]:.3f} energy')
                 for chart in errorCharts:
-                    chart['values'].append([0.0, 0.0, 0.0, 0.0, 0.0])
+                    chart['values'].append([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
 
             # Index of the key correlates to the errorChart (same order)
             keyIndex = baselineChart['keys'].index(key)
