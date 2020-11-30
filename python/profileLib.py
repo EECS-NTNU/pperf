@@ -227,7 +227,7 @@ class elfCache:
                     print(f"WARNING: disabling basic block reconstruction due to unknown architecture {cache['arch']}")
 
             # First step is creating an object dump of the elf file
-            pObjdump = subprocess.run(f"{crossCompile}objdump -Cdz --prefix-addresses {elf}", shell=True, stdout=subprocess.PIPE)
+            pObjdump = subprocess.run(f"{crossCompile}objdump -dz --prefix-addresses {elf}", shell=True, stdout=subprocess.PIPE)
             pObjdump.check_returncode()
             sObjdump = pObjdump.stdout.decode('utf-8')
             # Remove trailing additional data that begins with '//'
@@ -258,6 +258,7 @@ class elfCache:
                         asm += match0.group(5)
                     cache['asm'][pc] = asm.strip()
                     cache['cache'][pc] = sample
+                    # print(f'0x{pc:x}: {asm.strip()}')
 
             if (len(cache['cache']) == 0):
                 raise Exception(f'Could not parse any instructions from {elf}')
@@ -314,7 +315,6 @@ class elfCache:
                         sourcePath = cache['cache'][pc][SAMPLE.file]
                         searchPath = pathlib.Path(sourcePath)
                         cache['source'][sourcePath] = None
-                        # Only save the basename
                         if (os.path.isfile(sourcePath)):
                             targetFile = sourcePath
                         elif len(sourceSearchPaths) > 0:
@@ -331,9 +331,6 @@ class elfCache:
                                     currentSearchPath = pathlib.Path(*currentSearchPath.parts[1:])
                                 if found:
                                     break
-                            if not found:
-                                if verbose:
-                                    print(f"WARNING: could not find source code for {os.path.basename(sourcePath)}", file=sys.stderr)
 
                         if targetFile is not None:
                             decoded = False
@@ -351,6 +348,8 @@ class elfCache:
                             if not decoded:
                                 cache['source'][sourcePath] = None
                                 raise Exception(f"could not decode source code {localFileCache[sourcePath][0]}")
+                        elif verbose:
+                            print(f"WARNING: could not find source code for {os.path.basename(sourcePath)}", file=sys.stderr)
 
             # Fourth Step, basic block reconstruction
             if basicblockReconstruction:
@@ -405,14 +404,14 @@ class elfCache:
                 knownBranchTargets = []
                 for pc in dynmap:
                     if pc not in cache['cache']:
-                        raise Exception('address 0x{pc:x} from dynamic branch informations is unknown')
+                        raise Exception(f'address 0x{pc:x} from dynamic branch informations is unknown in file {elf}')
                     if not cache['cache'][pc][SAMPLE.meta] & META.branchInstruction:
-                        raise Exception('dynamic branch information provided an unknown branch at 0x{pc:x}')
+                        raise Exception(f'dynamic branch information provided an unknown branch at 0x{pc:x} in file {elf}')
                     # With the Exception this is unecessary
                     # cache['cache'][pc][SAMPLE.meta] |= META.branchInstruction
                     for target in dynmap[pc]:
                         if target not in cache['cache']:
-                            raise Exception('address 0x{target:x} from dynamic branch informations is unknown')
+                            raise Exception(f'target address 0x{target:x} from dynamic branch informations is unknown in file {elf}')
                         if not cache['cache'][target][SAMPLE.meta] & META.branchTarget and not cache['cache'][target][SAMPLE.meta] & META.functionHead:
                             newBranchTargets.append(target)
                         else:

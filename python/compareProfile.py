@@ -127,7 +127,8 @@ parser.add_argument("--exclude-binaries", help="exclude these binaries", default
 parser.add_argument("--exclude-files", help="exclude these files", default=[], nargs='+', action="extend")
 parser.add_argument("--exclude-functions", help="exclude these functions", default=[], nargs='+', action="extend")
 parser.add_argument("--exclude-external", help="exclude external binaries", default=False, action="store_true")
-parser.add_argument('--names', help='names of the provided profiles',default=[], nargs="+")
+parser.add_argument('--header', help='override header',default=None)
+parser.add_argument('--names', help='names of the provided profiles',default=[], nargs="+", action="extend")
 parser.add_argument('-n', '--name', action='append', help='name the provided profiles', default=[])
 parser.add_argument("-t", "--table", help="output csv table")
 parser.add_argument("--coverage", action="store_true", help="output coverage", default=False)
@@ -401,6 +402,9 @@ if errorFunction:
 header = header.strip()
 
 
+if args.header is not None:
+    header=args.header
+
 if errorFunction is not False and aggregateFunction is False:
     headers = numpy.array([chart['name'] for chart in errorCharts])
     rows = numpy.array(baselineChart['labels']).reshape(-1, 1)
@@ -455,7 +459,7 @@ if aggregateFunction is False:
             headers = numpy.insert(headers, (i * 2), 'Weights')
             rows = numpy.insert(rows, (i * 2) + 1, weights[:, i], axis=1)
 else:
-    header = "Profile"
+    header = 'Profile' # baselineProfile['name']
     rows = rows[::-1]
 
 if (args.table):
