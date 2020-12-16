@@ -48,9 +48,16 @@ parser.add_argument("--less-memory", action="store_true", help="use less memory"
 
 args = parser.parse_args()
 
-if (args.use_time is False and args.use_energy is False):
-    args.use_time = True
-    args.use_energy = False
+if (args.limit_time_top and args.limit_energy_top):
+    print("ERROR: limit time top and limit energy top options are exclusive")
+    parser.print_help()
+    sys.exit(0)
+
+if (not args.use_time and not args.use_energy):
+    if not args.limit_time_top and args.limit_energy_top:
+        args.use_energy = True
+    else:
+        args.use_time = True
 
 if args.use_time:
     args.use_energy = False
