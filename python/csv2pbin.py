@@ -57,8 +57,8 @@ if (args.kallsyms) and (not os.path.isfile(args.kallsyms)):
     parser.print_help()
     sys.exit(1)
 
-if (args.power_sensor is not False and args.power_sensor <= 0):
-    print("ERROR: invalid power sensor (>=1)")
+if (args.power_sensor is not False and args.power_sensor < 0):
+    print("ERROR: invalid power sensor (>=0)")
     sys.exit(1)
 
 if args.disable_cache:
@@ -153,7 +153,6 @@ for cpu in useCpus:
         sys.exit(1)
 
 if args.power_sensor is not False:
-    args.power_sensor -= 1
     if powerColumns:
         if args.power_sensor > (len(powerColumns)):
             print(f"ERROR: could not find power column for power sensor {args.power_sensor + 1}")
