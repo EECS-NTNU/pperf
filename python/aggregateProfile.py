@@ -382,7 +382,7 @@ if args.limit_time_top != 0 and args.limit_time_top < len(times):
     if cutOff is None or nCutOff > cutOff:
         cutOff = nCutOff
 
-if args.limit_energy_top != 0 and args.limit_energ_top < len(energies):
+if args.limit_energy_top != 0 and args.limit_energy_top < len(energies):
     nCutOff = len(energies) - (args.limit_energy_top)
     if cutOff is None or nCutOff > cutOff:
         cutOff = nCutOff
@@ -417,7 +417,7 @@ if (args.table):
         table = bz2.BZ2File.open(args.table, "w")
     else:
         table = open(args.table, "w")
-    table.write("function;time;executions;power;energy;samples\n")
+    table.write("symbol;time;executions;power;energy;samples\n")
     for f, t, e, s, m, n in zip(aggregationLabel, times, execs, powers, energies, samples):
         table.write(f"{f};{t};{e};{s};{m};{n}\n")
     table.close()
@@ -431,4 +431,4 @@ if (not args.quiet):
         pAggregationLabel = [f"{x[0:abs(args.cut_off_symbols)]}..." if len(x) > abs(args.cut_off_symbols) else x for x in aggregationLabel]
     else:
         pAggregationLabel = aggregationLabel
-    print(tabulate.tabulate(zip(pAggregationLabel, times, execs, powers, energies, samples, relativeSamples), headers=['Function', 'Time [s]', 'Executions', 'Power [W]', 'Energy [J]', 'Samples', '%']))
+    print(tabulate.tabulate(zip(pAggregationLabel, times, execs, powers, energies, samples, relativeSamples), headers=['Symbol', 'Time [s]', 'Executions', 'Power [W]', 'Energy [J]', 'Samples', '%']))
