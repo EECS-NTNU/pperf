@@ -16,6 +16,7 @@ parser.add_argument("-c", "--stdout", help="write to standard output", action="s
 parser.add_argument("-o", "--output", help="write to file (disabled if stdout is used)", default=False)
 parser.add_argument("-b", "--block-size", type=int, default=1000000, help="cycles read at once (default: %(default)s)")
 parser.add_argument("-l", "--compress-limit", type=int, default=100000000, help="compress after that many cycles (default: %(default)s)")
+parser.add_argument("-q", "--quiet", default=False, action="store_true", help="shhhhhh...")
 
 args = parser.parse_args()
 
@@ -47,7 +48,8 @@ if args.memtrace and not (args.memtrace.endswith('.gz') or args.memtrace.endswit
     sampleCount = int(traceFile.tell() / 32)
     traceFile.seek(0, os.SEEK_SET)
 else:
-    print('WARNING: cannot show progress for this type of input file', file=sys.stderr)
+    if not args.quiet:
+        print('WARNING: cannot show progress for this type of input file', file=sys.stderr)
     sampleCount = 0
 
 currentCycles = 0
@@ -78,7 +80,7 @@ while True:
     if not buf:
         break
 
-    if currentCycles >= lastCycles + updateInterval:
+    if not args.quiet and currentCycles >= lastCycles + updateInterval:
         currentTime = time.time()
         elapsed = currentTime - lastTime
         if currentCycles == 0 or elapsed <= 0:
@@ -165,6 +167,7 @@ if csvFile is not None:
 if args.output:
     csvFile.close()
 
-print(f'\nPostprocessing finished after {currentCycles} samples', file=sys.stderr)
+if not args.quiet:
+    print(f'\nPostprocessing finished after {currentCycles} samples', file=sys.stderr)
 
 exit(0)
