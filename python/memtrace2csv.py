@@ -139,7 +139,6 @@ while True:
 # Make sure a last time to compress
 saddrs, scounts, sbytes = scompress()
 
-csvFile = None
 if args.stdout:
     csvFile = sys.stdout
     args.output = False
@@ -147,22 +146,20 @@ if args.stdout:
 if args.output:
     csvFile = xopen(args.output, 'w')
 
-if csvFile is not None:
-    csvFile.write('time;power0;pc0;bytes;count\n')
-    csvFile.write('0;0;0;0;0\n')
-    numpy.savetxt(csvFile,
-                  numpy.concatenate(
-                      (
-                          numpy.cumsum(scounts, dtype=numpy.uint64).reshape(-1, 1),
-                          numpy.array(sbytes / scounts, dtype=numpy.float64).reshape(-1, 1),
-                          numpy.array(saddrs, dtype=numpy.uint64).reshape(-1, 1),
-                          numpy.array(sbytes, dtype=numpy.uint64).reshape(-1, 1),
-                          numpy.array(scounts, dtype=numpy.uint64).reshape(-1, 1),
-                      ),
-                      axis=1
+csvFile.write('time;power0;pc0;bytes;count\n')
+csvFile.write('0;0;0;0;0\n')
+numpy.savetxt(csvFile,
+              numpy.concatenate(
+                  (
+                      numpy.cumsum(scounts, dtype=numpy.uint64).reshape(-1, 1),
+                      numpy.array(sbytes / scounts, dtype=numpy.float64).reshape(-1, 1),
+                      numpy.array(saddrs, dtype=numpy.uint64).reshape(-1, 1),
+                      numpy.array(sbytes, dtype=numpy.uint64).reshape(-1, 1),
+                      numpy.array(scounts, dtype=numpy.uint64).reshape(-1, 1),
                   ),
-                  fmt='%i;%.16f;%i;%i;%i')
-
+                  axis=1
+              ),
+              fmt='%i;%.16f;%i;%i;%i')
 
 if args.output:
     csvFile.close()
