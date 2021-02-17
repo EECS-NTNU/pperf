@@ -4,7 +4,6 @@ import argparse
 import os
 import sys
 import pickle
-import bz2
 import csv
 import profileLib
 import time
@@ -22,14 +21,16 @@ profile = {
     'cpus': 0,
     'name': "",
     'target': "",
-    'maps' : {}, # samples are mapped towrds those maps to reduce size
-    'cacheMap' : {}, # which binary belongs to which cache
+    'maps': {},  # samples are mapped towrds those maps to reduce size
+    'cacheMap': {},  # which binary belongs to which cache
     'profile': [],
     'toolchain': profileLib.getToolchainVersion()
 }
 
 parser = argparse.ArgumentParser(description="Parse sthem csv exports.")
 parser.add_argument("csv", help="csv export from sthem")
+parser.add_argument("--address-offset", help="apply this address offset", type=str, default="0")
+parser.add_argument("--time-factor", help="apply this time factor", type=float, default=1)
 parser.add_argument("-p", "--power-sensor", help="power sensor to use", type=int, default=False)
 parser.add_argument("-n", "--name", help="name profile")
 parser.add_argument("-s", "--search-path", help="add search path", action="append")
@@ -37,6 +38,8 @@ parser.add_argument("-o", "--output", help="output profile")
 parser.add_argument("-v", "--vmmap", help="vmmap from profiling run")
 parser.add_argument("-ks", "--kallsyms", help="parse with kernel symbol file")
 parser.add_argument("-c", "--cpus", help="list of active cpu cores", default=None)
+parser.add_argument("-t", "--type", help="define the type of the input csv (%(default)s)", choices=["timeline", "flat"], default="timeline")
+parser.add_argument("--normalized", help="the provided profile is normalized (starts at second 0)", action="store_true", default=False)
 parser.add_argument("--unwind-inline", action="store_true", help="unwind inlined functions", default=False)
 parser.add_argument("--disable-cache", action="store_true", help="do not create or use prepared address caches", default=False)
 
@@ -88,7 +91,7 @@ sys.stdout.flush()
 csvFile = xopen.xopen(args.csv, "r")
 
 
-csvProfile = csv.reader(csvFile, delimiter=";")
+csvProfile = csv.reader(filter(lambda row: row[0] != '#', csvFile), delimiter=";")
 
 # get number of samples
 
@@ -145,8 +148,6 @@ if not timeColumn:
 else:
     timeColumn = timeColumn[0]
 
-
-
 for cpu in useCpus:
     if cpu > (len(pcColumns) - 1):
         print(f"ERROR: could not find PC columns for cpu {cpu}")
@@ -167,9 +168,16 @@ if args.power_sensor is not False:
 power = 0
 
 if len(useCpus) == 0:
-    defaultSample = sampleParser.parseFromPC(0)
+    defaultSample = sampleParser.parsePC(0)
 
 cumEnergy = 0
+cumTime = 0
+startTime = 0 if args.normalized else None
+prevTime = 0 if args.normalized else None
+cumTime = 0 if args.normalized else None
+
+addressOffset = int(args.address_offset, 0)
+timeFactor = args.time_factor
 
 for sample in csvProfile:
     if (i % updateInterval == 0):
@@ -187,36 +195,48 @@ for sample in csvProfile:
 
     wallTime = float(sample[timeColumn])
 
-    if prevTime is not None and wallTime < prevTime:
+    if args.type == "timeline" and prevTime is not None and wallTime < prevTime:
         print(f"WARNING: negative sample time for sample at {wallTime:.2f} (samples must be ordered after time)!", file=sys.stderr)
 
     if prevTime is None:
         prevTime = wallTime
+
+    if startTime is None:
         startTime = wallTime
+
+    if cumTime is None:
+        cumTime = 0 if args.type == "flat" else -wallTime
+
+    cumTime += wallTime
+    useTime = wallTime - prevTime if args.type == "timeline" else wallTime
+    timestamp = wallTime - startTime if args.type == "timeline" else cumTime
+
+    useTime *= timeFactor
+    timestamp *= timeFactor
 
     if args.power_sensor is not False:
         if usePower:
             power = float(sample[powerColumns[args.power_sensor]])
         else:
             power = float(sample[voltageColumns[args.power_sensor]]) * float(sample[currentColumns[args.power_sensor]])
-        cumEnergy += power * (wallTime - prevTime)
+        cumEnergy += power * useTime
 
     processedSample = []
     if len(useCpus) == 0:
-        processedSample = [[0, wallTime - prevTime, defaultSample]]
+        processedSample = [[0, useTime, defaultSample]]
     else:
         processedSample = []
         for cpu in useCpus:
-            pc = int(sample[pcColumns[cpu]], 0)
-            processedSample.append([cpu, wallTime - prevTime, sampleParser.parsePC(pc)])
+            pc = int(sample[pcColumns[cpu]], 0) + addressOffset
+            processedSample.append([cpu, useTime, sampleParser.parsePC(pc)])
 
     prevTime = wallTime
-    profile['profile'].append([power, wallTime - startTime, processedSample])
+    profile['profile'].append([power, timestamp, processedSample])
 
 del csvProfile
 del csvFile
 
-profile['samplingTime'] = wallTime - startTime
+profile['samplingTime'] = wallTime - startTime if args.type == "timeline" else cumTime
 profile['energy'] = cumEnergy
 profile['power'] = cumEnergy / profile['samplingTime']
 profile['maps'] = sampleParser.getMaps()

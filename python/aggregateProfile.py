@@ -237,10 +237,13 @@ if not preAggregated:
                     else:
                         aggregateIndex = sampleFormatter.formatSample(mappedSample, displayKeys=args.external_aggregate, delimiter=args.external_delimiter, labelNone=args.label_none)
 
+                    mappedSample = [x if x is not None else args.label_none for x in mappedSample]
+
                     if threadId not in threadLocations:
                         threadLocations[threadId] = None
 
                     if aggregateIndex not in subAggregate:
+
                         subAggregate[aggregateIndex] = [
                             useSampleTime,  # total execution time
                             0,

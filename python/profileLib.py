@@ -10,8 +10,6 @@ import pathlib
 from filelock import FileLock
 from datetime import datetime
 import tempfile
-import pkgutil
-import encodings
 import csv
 from copy import copy
 
@@ -41,17 +39,19 @@ class AGGSAMPLE:
     label        = 5
     mappedSample = 6
 
+
 class SAMPLE:
-    pc          = 0 # int
-    binary      = 1 # str
-    file        = 2 # str
-    function    = 3 # str
-    basicblock  = 4 # str
-    line        = 5 # int
-    instruction = 6 # str
-    meta        = 7 # int
+    pc          = 0  # int
+    binary      = 1  # str
+    file        = 2  # str
+    function    = 3  # str
+    basicblock  = 4  # str
+    line        = 5  # int
+    instruction = 6  # str
+    meta        = 7  # int
     names = ['pc', 'binary', 'file', 'function', 'basicblock', 'line', 'instruction', 'meta']
     invalid = [None, None, None, None, None, None, None]
+
 
 class META:
     normalInstruction    = 0
@@ -79,10 +79,11 @@ def getElfArchitecture(elf: str):
     readelf = subprocess.run(f'readelf -h {elf}', shell=True, stdout=subprocess.PIPE)
     readelf.check_returncode()
     for line in readelf.stdout.decode('utf-8').split('\n'):
-        line=line.strip()
+        line = line.strip()
         if line.startswith('Machine:'):
             return line.split(':', 1)[1].strip()
     return None
+
 
 def parseRange(stringRange):
     result = []
@@ -96,6 +97,7 @@ def parseRange(stringRange):
             result.append(a)
     return result
 
+
 class elfCache:
     # Basic Block Reconstruction:
     # currently requires support through dynamic branch analysis which
@@ -106,13 +108,13 @@ class elfCache:
     archBranches = {
         'AArch64': {
             # These instruction divert the control flow of the application
-            'all' : {'b', 'b.eq', 'b.ne', 'b.cs', 'b.hs', 'b.cc', 'b.lo', 'b.mi', 'b.pl', 'b.vs', 'b.vc', 'b.hi', 'b.ls', 'b.ge', 'b.lt', 'b.gt', 'b.le', 'b.al', 'b.nv', 'bl', 'br', 'blr', 'svc', 'brk', 'ret', 'cbz', 'cbnz', 'tbnz'},
+            'all': {'b', 'b.eq', 'b.ne', 'b.cs', 'b.hs', 'b.cc', 'b.lo', 'b.mi', 'b.pl', 'b.vs', 'b.vc', 'b.hi', 'b.ls', 'b.ge', 'b.lt', 'b.gt', 'b.le', 'b.al', 'b.nv', 'bl', 'br', 'blr', 'svc', 'brk', 'ret', 'cbz', 'cbnz', 'tbnz'},
             # These instructions are dynamic branches that can only divert control flow towards the head of a basicblock/function or after another branch instruction
-            'remote' : {'svc', 'brk', 'blr', 'ret'},
+            'remote': {'svc', 'brk', 'blr', 'ret'},
         },
         'RISC-V': {
-            'all' : {'j', 'jal', 'jr', 'jalr', 'ret', 'call', 'tail', 'bne', 'beq', 'blt', 'bltu', 'bge', 'bgeu', 'beqz', 'bnez', 'blez', 'bgez', 'bltz', 'bgtz', 'bgt', 'ble', 'bgtu', 'bleu', 'ecall', 'ebreak', 'scall', 'sbreak'},
-            'remote' : {'ebreak', 'ecall', 'sbreak', 'scall', 'jalr', 'ret'},
+            'all': {'j', 'jal', 'jr', 'jalr', 'ret', 'call', 'tail', 'bne', 'beq', 'blt', 'bltu', 'bge', 'bgeu', 'beqz', 'bnez', 'blez', 'bgez', 'bltz', 'bgtz', 'bgt', 'ble', 'bgtu', 'bleu', 'ecall', 'ebreak', 'scall', 'sbreak'},
+            'remote': {'ebreak', 'ecall', 'sbreak', 'scall', 'jalr', 'ret'},
         }
     }
 
@@ -135,7 +137,7 @@ class elfCache:
             return pickle.load(open(name, mode="rb"))
         else:
             raise Exception(f'could not find requested elf cache {name}')
-          
+
     def getCacheFile(self, elf):
         if elf in self.cacheFiles:
             return self.cacheFiles[elf]
@@ -150,20 +152,23 @@ class elfCache:
         global disableCache
         if not self.cacheAvailable(elf):
             if disableCache:
-                print(f"WARNING: cache disabled, constructing limited in memory cache", file=sys.stderr)
-                self.createCache(elf, basicblockReconstruction = False, includeSource=False, verbose=False)
+                print("WARNING: cache disabled, constructing limited in memory cache", file=sys.stderr)
+                self.createCache(elf, basicblockReconstruction=False, includeSource=False, verbose=False)
             else:
                 raise Exception(f'could not find cache for file {elf}, please create first or run with disabled cache')
-       
-    def getSampleFromPC(self, elf : str, pc : int):
+
+    def getSampleFromPC(self, elf: str, pc: int):
         self.openOrCreateCache(elf)
         if pc not in self.caches[elf]['cache']:
             print(f"WARNING: 0x{pc:x} does not exist in {elf}", file=sys.stderr)
-            return None
+            sample = copy(SAMPLE.invalid)
+            sample[SAMPLE.binary] = self.caches[elf]['name']
+            sample[SAMPLE.pc] = pc
+            return sample
         else:
             return self.caches[elf]['cache'][pc]
 
-    def cacheAvailable(self, elf : str, load = True):
+    def cacheAvailable(self, elf: str, load=True):
         if elf in self.caches:
             return True
         global disableCache
@@ -186,7 +191,7 @@ class elfCache:
         else:
             return False
 
-    def createCache(self, elf : str, name = None, sourceSearchPaths = [], dynmapfile = None, includeSource = True, basicblockReconstruction = True, verbose = True):
+    def createCache(self, elf: str, name=None, sourceSearchPaths=[], dynmapfile=None, includeSource=True, basicblockReconstruction=True, verbose=True):
         global cacheVersion
         global crossCompile
         global unwindInline
@@ -216,7 +221,7 @@ class elfCache:
                 'date': datetime.now(),
                 'toolchain': getToolchainVersion(),
                 'unwindInline': unwindInline,
-                'cache' : {},
+                'cache': {},
                 'source': {},
                 'asm': {},
             }
@@ -226,39 +231,58 @@ class elfCache:
                 if verbose:
                     print(f"WARNING: disabling basic block reconstruction due to unknown architecture {cache['arch']}")
 
-            # First step is creating an object dump of the elf file
-            pObjdump = subprocess.run(f"{crossCompile}objdump -dz --prefix-addresses {elf}", shell=True, stdout=subprocess.PIPE)
-            pObjdump.check_returncode()
-            sObjdump = pObjdump.stdout.decode('utf-8')
-            # Remove trailing additional data that begins with '//'
-            # sObjdump = re.sub('[ \t]+(// ).+\n','\n', sObjdump)
-            # Remove trailing additional data that begins with '#'
-            # sObjdump = re.sub('[ \t]+(# ).+\n','\n', sObjdump)
+            sPreObjdump = f"{crossCompile}objdump -wh {elf}"
+            pPreObjdump = subprocess.Popen(sPreObjdump, shell=True, stdout=subprocess.PIPE, universal_newlines=True)
+            for sectionLine in pPreObjdump.stdout:
+                sectionLine = re.sub(r', ', ',', sectionLine)
+                sectionList = re.sub(r'[\t ]+', ' ', sectionLine).strip().split(' ')
+                # Check whether we write, allocate or execute a section
+                if len(sectionList) < 7 or 'CODE' not in sectionList[7]:
+                    continue
+                section = sectionList[1]
 
-            for line in sObjdump.split('\n'):
-                objdumpInstruction = re.compile('([0-9a-fA-F]+) (<.+?(\+0x[0-9a-f-A-F]+)?> [^\t ]+)(\t[^<\t]+)?(.+)?')
-                funcOffset = re.compile('^<(.+?)(\+0x[0-9a-f-A-F]+)?>$')
-                match0 = objdumpInstruction.match(line)
-                if match0:
-                    # Instruction can be reliably splitted of the second match
-                    funcAndInstr = match0.group(2).rsplit(' ', 1)
-                    meta = META.normalInstruction
-                    match1 = funcOffset.match(funcAndInstr[0])
-                    if match1.group(2) is None:
-                        meta |= META.functionHead | META.basicblockHead
-                        functionCounter += 1
-                    pc = int(match0.group(1), 16)
-                    # match 3 the pc offset in the function, not used here
-                    # match 4 are the function arguments
-                    sample = [pc, name, None, match1.group(1), f'f{functionCounter}', None, funcAndInstr[1], meta]
-                    asm = funcAndInstr[1]
-                    if match0.group(4) is not None:
-                        asm += match0.group(4)
-                    if match0.group(5) is not None:
-                        asm += match0.group(5)
-                    cache['asm'][pc] = asm.strip()
-                    cache['cache'][pc] = sample
-                    # print(f'0x{pc:x}: {asm.strip()}')
+                # First step is creating an object dump of the elf file
+                # We disassemble much more than needed however its necesarry for some profilers
+                sObjdump = f"{crossCompile}objdump -Dz --prefix-addresses -j {section} {elf}"
+                pObjdump = subprocess.Popen(sObjdump, shell=True, stdout=subprocess.PIPE, universal_newlines=True)
+                # Remove trailing additional data that begins with '//'
+                # sObjdump = re.sub('[ \t]+(// ).+\n','\n', sObjdump)
+                # Remove trailing additional data that begins with '#'
+                # sObjdump = re.sub('[ \t]+(# ).+\n','\n', sObjdump)
+
+                for line in pObjdump.stdout:
+                    objdumpInstruction = re.compile('([0-9a-fA-F]+) (<.+?(\+0x[0-9a-f-A-F]+)?> [^\t ]+)(\t[^<\t]+)?(.+)?')
+                    funcOffset = re.compile('^<(.+?)(\+0x[0-9a-f-A-F]+)?>$')
+                    match0 = objdumpInstruction.match(line)
+                    if match0:
+                        # Instruction can be reliably splitted of the second match
+                        funcAndInstr = match0.group(2).rsplit(' ', 1)
+                        meta = META.normalInstruction
+                        match1 = funcOffset.match(funcAndInstr[0])
+                        if match1.group(2) is None:
+                            meta |= META.functionHead | META.basicblockHead
+                            functionCounter += 1
+                        pc = int(match0.group(1), 16)
+                        # match 3 the pc offset in the function, not used here
+                        # match 4 are the function arguments
+                        sample = [pc, name, None, match1.group(1), f'f{functionCounter}', None, funcAndInstr[1], meta]
+                        asm = funcAndInstr[1]
+                        if match0.group(4) is not None:
+                            asm += match0.group(4)
+                        if match0.group(5) is not None:
+                            asm += match0.group(5)
+                        cache['asm'][pc] = asm.strip()
+                        cache['cache'][pc] = sample
+                        # print(f'0x{pc:x}: {asm.strip()}')
+                pObjdump.stdout.close()
+                returnCode = pObjdump.wait()
+                if returnCode:
+                    raise subprocess.CalledProcessError(returnCode, sObjdump)
+
+            pPreObjdump.stdout.close()
+            returnCode = pPreObjdump.wait()
+            if returnCode:
+                raise subprocess.CalledProcessError(returnCode, sPreObjdump)
 
             if (len(cache['cache']) == 0):
                 raise Exception(f'Could not parse any instructions from {elf}')
@@ -306,9 +330,9 @@ class elfCache:
             # Third Step, read in source code
             if includeSource:
                 # Those encondings will be tried
-                all_encodings=['utf_8', 'latin_1', 'ascii', 'utf_16', 'utf_32', 'iso8859_2', 'utf_8_sig' 'utf_16_be', 'utf_16_le', 'utf_32_be', 'utf_32_le',
-                               'iso8859_3', 'iso8859_4', 'iso8859_5', 'iso8859_6', 'iso8859_7', 'iso8859_8', 'iso8859_9', 'iso8859_10', 'iso8859_11', 'iso8859_12',
-                               'iso8859_13', 'iso8859_14', 'iso8859_15', 'iso8859_16']
+                all_encodings = ['utf_8', 'latin_1', 'ascii', 'utf_16', 'utf_32', 'iso8859_2', 'utf_8_sig' 'utf_16_be', 'utf_16_le', 'utf_32_be', 'utf_32_le',
+                                 'iso8859_3', 'iso8859_4', 'iso8859_5', 'iso8859_6', 'iso8859_7', 'iso8859_8', 'iso8859_9', 'iso8859_10', 'iso8859_11', 'iso8859_12',
+                                 'iso8859_13', 'iso8859_14', 'iso8859_15', 'iso8859_16']
                 for pc in cache['cache']:
                     if cache['cache'][pc][SAMPLE.file] is not None and cache['cache'][pc][SAMPLE.file] not in cache['source']:
                         targetFile = None
@@ -326,7 +350,7 @@ class elfCache:
                                 while not found and len(currentSearchPath.parts) > 0:
                                     if os.path.isfile(search / currentSearchPath):
                                         targetFile = search / currentSearchPath
-                                        found=True
+                                        found = True
                                         break
                                     currentSearchPath = pathlib.Path(*currentSearchPath.parts[1:])
                                 if found:
@@ -341,13 +365,13 @@ class elfCache:
                                         for i, line in enumerate(fp):
                                             cache['source'][sourcePath].append(line.strip('\r\n'))
                                     # print(f"Opened file {targetFile} with encoding {enc}")
-                                    decoded=True
+                                    decoded = True
                                     break
                                 except Exception:
                                     pass
                             if not decoded:
                                 cache['source'][sourcePath] = None
-                                raise Exception(f"could not decode source code {localFileCache[sourcePath][0]}")
+                                raise Exception(f"could not decode source code {sourcePath}")
                         elif verbose:
                             print(f"WARNING: could not find source code for {os.path.basename(sourcePath)}", file=sys.stderr)
 
@@ -365,17 +389,17 @@ class elfCache:
                                 try:
                                     fromPc = int(row[0], 0)
                                     toPc = int(row[1], 0)
-                                except:
+                                except Exception:
                                     continue
                                 if fromPc not in dynmap:
                                     dynmap[fromPc] = [toPc]
                                 else:
                                     dynmap[fromPc].append(toPc)
-                    except:
+                    except Exception:
                         if verbose:
                             print(f"WARNING: could not read dynamic branch information from {dynmapfile}", file=sys.stderr)
 
-                pcs = sorted(cache['cache'].keys())
+                # pcs = sorted(cache['cache'].keys())
                 unresolvedBranches = []
                 # First pass to identify branches
                 for pc in cache['cache']:
@@ -385,14 +409,14 @@ class elfCache:
                         asm = cache['asm'][pc].split('\t')
                         if instruction not in self.archBranches[cache['arch']]['remote'] and len(asm) >= 2:
                             branched = False
-                            for argument in reversed(re.split(', |,| ',asm[1])):
+                            for argument in reversed(re.split(', |,| ', asm[1])):
                                 try:
                                     branchTarget = int(argument.strip(), 16)
                                     if branchTarget in cache['cache']:
                                         cache['cache'][branchTarget][SAMPLE.meta] |= META.branchTarget
                                         branched = True
                                         break
-                                except:
+                                except Exception:
                                     pass
                             if not branched and verbose:
                                 # Might be a branch that has dynmap information or comes from the plt
@@ -457,21 +481,21 @@ class elfCache:
 class listmapper:
     maps = {}
 
-    def __init__(self, mapping = None):
+    def __init__(self, mapping=None):
         if mapping is not None:
             self.addMaping(mapping)
-   
+
     def removeMapping(self, mapping):
         if isinstance(mapping, list):
             for m in mapping:
                 if not isinstance(m, int):
                     raise Exception('class listmapper must be used with integer maps')
                 if m in self.maps:
-                    unset(self.maps[m])
+                    del self.maps[m]
         elif isinstance(mapping, int):
             raise Exception('class listmapper must be used with integer maps')
         elif mapping in self.maps:
-            unset(self.maps[mapping])
+            del self.maps[mapping]
 
     def addMaping(self, mapping):
         if isinstance(mapping, list):
@@ -484,7 +508,7 @@ class listmapper:
             raise Exception('class listmapper must be used with integer maps')
         elif mapping not in self.maps:
             self.maps[mapping] = []
-   
+
     def mapValues(self, values: list):
         mapped = []
         for i, val in enumerate(values):
@@ -507,7 +531,7 @@ class listmapper:
                 remapped.append(val)
         return remapped
 
-    def setMaps(self, maps : dict):
+    def setMaps(self, maps: dict):
         self.maps = maps
 
     def retrieveMaps(self):
@@ -569,7 +593,7 @@ class sampleParser:
                             offset = int(readelfsection.stdout.decode('utf-8').split('\n')[:-1][0].split(":")[0], 0)
                             found = True
                             break
-                        except Exception as e:
+                        except Exception:
                             pass
 
                 if found:
@@ -661,7 +685,7 @@ class sampleParser:
                 if sample is not None:
                     if sample[SAMPLE.binary] not in self.cacheMap:
                         self.cacheMap[sample[SAMPLE.binary]] = os.path.basename(self.cache.getCacheFile(binary['path']))
-                    
+
         if sample is None:
             sample = copy(SAMPLE.invalid)
             sample[SAMPLE.pc] = pc
@@ -684,6 +708,7 @@ class sampleParser:
         self.cache.openOrCreateCache(binary)
         return self.cache.caches[binary]['name']
 
+
 class sampleFormatter():
     mapper = listmapper()
 
@@ -692,8 +717,8 @@ class sampleFormatter():
 
     def remapSample(self, sample):
         return self.mapper.remapValues(sample)
-       
-    def formatSample(self, sample, displayKeys=[SAMPLE.binary, SAMPLE.function], delimiter=":", labelNone = '_unknown'):
+
+    def formatSample(self, sample, displayKeys=[SAMPLE.binary, SAMPLE.function], delimiter=":", labelNone='_unknown'):
         for i, k in enumerate(displayKeys):
             valid = True
             if isinstance(k, str):

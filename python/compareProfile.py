@@ -123,9 +123,9 @@ parser.add_argument("--time-threshold", help="time contribution threshold to inc
 parser.add_argument("--limit-energy-top", help="include top n entries ranked after energy", type=int, default=0)
 parser.add_argument("--limit-energy", help="include top entries until limit (in percent, e.g. 0.0 - 1.0)", type=float, default=0)
 parser.add_argument("--energy-threshold", help="energy contribution threshold (in percent, e.g. 0.0 - 1.0)", type=float, default=0)
-parser.add_argument("--exclude-binaries", help="exclude these binaries", default=[], nargs='+', action="extend")
-parser.add_argument("--exclude-files", help="exclude these files", default=[], nargs='+', action="extend")
-parser.add_argument("--exclude-functions", help="exclude these functions", default=[], nargs='+', action="extend")
+parser.add_argument("--exclude-binary", help="exclude these binaries", default=[], nargs='+', action="extend")
+parser.add_argument("--exclude-file", help="exclude these files", default=[], nargs='+', action="extend")
+parser.add_argument("--exclude-function", help="exclude these functions", default=[], nargs='+', action="extend")
 parser.add_argument("--exclude-external", help="exclude external binaries", default=False, action="store_true")
 parser.add_argument('--header', help='override header',default=None)
 parser.add_argument('--names', help='names of the provided profiles',default=[], nargs="+", action="extend")
@@ -255,14 +255,14 @@ if (args.limit_energy > 0 or args.limit_energy_top > 0):
 else:
     baselineProfile['profile'] = collections.OrderedDict(sorted(baselineProfile['profile'].items(), key=lambda x: operator.itemgetter(profileLib.AGGSAMPLE.time)(x[1]), reverse=True))
 
-filterAnything = args.exclude_external or len(args.exclude_binaries) > 0 or len(args.exclude_files) > 0 or len(args.exclude_functions) > 0
+filterAnything = args.exclude_external or len(args.exclude_binary) > 0 or len(args.exclude_file) > 0 or len(args.exclude_function) > 0
 # Filter out exclude before anything else
 if filterAnything:
     for key in list(baselineProfile['profile'].keys()):
         if (args.exclude_external and baselineProfile['profile'][key][profileLib.AGGSAMPLE.mappedSample][profileLib.SAMPLE.binary] != baselineProfile['target']) or \
-           (len(args.exclude_binaries) > 0 and baselineProfile['profile'][key][profileLib.AGGSAMPLE.mappedSample][profileLib.SAMPLE.binary] in args.exclude_binaries) or \
-           (len(args.exclude_files) > 0 and baselineProfile['profile'][key][profileLib.AGGSAMPLE.mappedSample][profileLib.SAMPLE.file] in args.exclude_files) or \
-           (len(args.exclude_functions) > 0 and baselineProfile['profile'][key][profileLib.AGGSAMPLE.mappedSample][profileLib.SAMPLE.function] in args.exclude_functions):
+           (len(args.exclude_binary) > 0 and baselineProfile['profile'][key][profileLib.AGGSAMPLE.mappedSample][profileLib.SAMPLE.binary] in args.exclude_binary) or \
+           (len(args.exclude_file) > 0 and baselineProfile['profile'][key][profileLib.AGGSAMPLE.mappedSample][profileLib.SAMPLE.file] in args.exclude_file) or \
+           (len(args.exclude_function) > 0 and baselineProfile['profile'][key][profileLib.AGGSAMPLE.mappedSample][profileLib.SAMPLE.function] in args.exclude_function):
             del baselineProfile['profile'][key]
 
 for key in baselineProfile['profile']:
