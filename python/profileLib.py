@@ -256,7 +256,7 @@ class elfCache:
                     match0 = objdumpInstruction.match(line)
                     if match0:
                         # Instruction can be reliably splitted of the second match
-                        funcAndInstr = match0.group(2).rsplit(' ', 1)
+                        funcAndInstr = match0.group(2).rstrip('\n').rsplit(' ', 1)
                         meta = META.normalInstruction
                         match1 = funcOffset.match(funcAndInstr[0])
                         if match1.group(2) is None:
@@ -268,9 +268,9 @@ class elfCache:
                         sample = [pc, name, None, match1.group(1), f'f{functionCounter}', None, funcAndInstr[1], meta]
                         asm = funcAndInstr[1]
                         if match0.group(4) is not None:
-                            asm += match0.group(4)
+                            asm += match0.group(4).rstrip('\n')
                         if match0.group(5) is not None:
-                            asm += match0.group(5)
+                            asm += match0.group(5).rstrip('\n')
                         cache['asm'][pc] = asm.strip()
                         cache['cache'][pc] = sample
                         # print(f'0x{pc:x}: {asm.strip()}')
