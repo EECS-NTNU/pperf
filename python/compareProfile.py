@@ -15,59 +15,70 @@ import profileLib
 import statistics
 from xopen import xopen
 
-def error(baseline, value, totalBaseline, totalValue, weight):
+
+def error(baseline, value, totalBaseline, totalValue, weight, fullTotalBaseline, fullTotalValue):
     return value - baseline
 
 
-def weightedError(baseline, value, totalBaseline, totalValue, weight):
-    return error(baseline, value, totalBaseline, totalValue, weight) * weight
+def weightedError(baseline, value, totalBaseline, totalValue, weight, fullTotalBaseline, fullTotalValue):
+    return error(baseline, value, totalBaseline, totalValue, weight, fullTotalBaseline, fullTotalValue) * weight
 
 
-def absoluteWeightedError(baseline, value, totalBaseline, totalValue, weight):
-    return abs(weightedError(baseline, value, totalBaseline, totalValue, weight))
+def absoluteWeightedError(baseline, value, totalBaseline, totalValue, weight, fullTotalBaseline, fullTotalValue):
+    return abs(weightedError(baseline, value, totalBaseline, totalValue, weight, fullTotalBaseline, fullTotalValue))
 
 
-def absoluteError(baseline, value, totalBaseline, totalValue, weight):
-    return abs(error(baseline, value, totalBaseline, totalValue, weight))
+def absoluteError(baseline, value, totalBaseline, totalValue, weight, fullTotalBaseline, fullTotalValue):
+    return abs(error(baseline, value, totalBaseline, totalValue, weight, fullTotalBaseline, fullTotalValue))
 
 
-def relativeError(baseline, value, totalBaseline, totalValue, weight):
-    return error(baseline, value, totalBaseline, totalValue, weight) / baseline if (baseline != 0) else 0
+def relativeError(baseline, value, totalBaseline, totalValue, weight, fullTotalBaseline, fullTotalValue):
+    return error(baseline, value, totalBaseline, totalValue, weight, fullTotalBaseline, fullTotalValue) / baseline if (baseline != 0) else 0
 
 
-def absoluteRelativeError(baseline, value, totalBaseline, totalValue, weight):
-    return abs(relativeError(baseline, value, totalBaseline, totalValue, weight))
+def absoluteRelativeError(baseline, value, totalBaseline, totalValue, weight, fullTotalBaseline, fullTotalValue):
+    return abs(relativeError(baseline, value, totalBaseline, totalValue, weight, fullTotalBaseline, fullTotalValue))
 
 
-def weightedRelativeError(baseline, value, totalBaseline, totalValue, weight):
-    return relativeError(baseline, value, totalBaseline, totalValue, weight) * weight
+def weightedRelativeError(baseline, value, totalBaseline, totalValue, weight, fullTotalBaseline, fullTotalValue):
+    return relativeError(baseline, value, totalBaseline, totalValue, weight, fullTotalBaseline, fullTotalValue) * weight
 
 
-def absoluteWeightedRelativeError(baseline, value, totalBaseline, totalValue, weight):
-    return abs(weightedRelativeError(baseline, value, totalBaseline, totalValue, weight))
+def absoluteWeightedRelativeError(baseline, value, totalBaseline, totalValue, weight, fullTotalBaseline, fullTotalValue):
+    return abs(weightedRelativeError(baseline, value, totalBaseline, totalValue, weight, fullTotalBaseline, fullTotalValue))
 
 
 # values are already processed by errorFunction
-def aggregateSum(baselines, values, totalBaseline, totalValue, weights):
+def aggregateSum(baselines, values, totalBaseline, totalValue, weights, fullTotalBaseline, fullTotalValue):
     return sum(values)
 
 
 # values are already processed by errorFunction
-def aggregateMin(baselines, values, totalBaseline, totalValue, weights):
+def aggregateMin(baselines, values, totalBaseline, totalValue, weights, fullTotalBaseline, fullTotalValue):
     return min(values)
 
 
 # values are already processed by errorFunction
-def aggregateMax(baselines, values, totalBaseline, totalValue, weights):
+def aggregateMax(baselines, values, totalBaseline, totalValue, weights, fullTotalBaseline, fullTotalValue):
     return max(values)
 
 
 # values are already processed by errorFunction
-def aggregateMean(baselines, values, totalBaseline, totalValue, weights):
+def aggregateMean(baselines, values, totalBaseline, totalValue, weights, fullTotalBaseline, fullTotalValue):
     return sum(values) / len(values)
 
 
-def aggregateWeightedMean(baselines, values, totalBaseline, totalValue, weights):
+# values are already processed by errorFunction
+def aggregateRelativeBaseline(baselines, values, totalBaseline, totalValue, weights, fullTotalBaseline, fullTotalValue):
+    return (sum(values) / fullTotalBaseline) if fullTotalBaseline != 0 else 0
+
+
+# values are already processed by errorFunction
+def aggregateRelative(baselines, values, totalBaseline, totalValue, weights, fullTotalBaseline, fullTotalValue):
+    return (sum(values) / fullTotalValue) if fullTotalValue != 0 else 0
+
+
+def aggregateWeightedMean(baselines, values, totalBaseline, totalValue, weights, fullTotalBaseline, fullTotalValue):
     return sum([value * weight for value, weight in zip(values, weights)])
     explodedData = []
     for value, weight in zip(values, weights):
@@ -75,12 +86,12 @@ def aggregateWeightedMean(baselines, values, totalBaseline, totalValue, weights)
     return statistics.mean(explodedData)
 
 
-def aggregateRootMeanSquaredError(baselines, values, totalBaseline, totalValue, weights):
-    return math.sqrt(sum([math.pow(error(baseline, value, totalBaseline, totalValue, weight), 2) for baseline, value, weight in zip(baselines, values, weights)]) / len(values))
+def aggregateRootMeanSquaredError(baselines, values, totalBaseline, totalValue, weights, fullTotalBaseline, fullTotalValue):
+    return math.sqrt(sum([math.pow(error(baseline, value, totalBaseline, totalValue, weight, fullTotalBaseline, fullTotalValue), 2) for baseline, value, weight in zip(baselines, values, weights)]) / len(values))
 
 
-def aggregateWeightedRootMeanSquaredError(baselines, values, totalBaseline, totalValue, weights):
-    return math.sqrt(sum([math.pow(error(baseline, value, totalBaseline, totalValue, weight), 2) * weight for baseline, value, weight in zip(baselines, values, weights)]))
+def aggregateWeightedRootMeanSquaredError(baselines, values, totalBaseline, totalValue, weights, fullTotalBaseline, fullTotalValue):
+    return math.sqrt(sum([math.pow(error(baseline, value, totalBaseline, totalValue, weight, fullTotalBaseline, fullTotalValue), 2) * weight for baseline, value, weight in zip(baselines, values, weights)]))
 
 
 # [ parameter, description, error function,  ]
@@ -97,6 +108,8 @@ errorFunctions = numpy.array([
 
 aggregateFunctions = numpy.array([
     ['sum', 'Total', aggregateSum, True],
+    ['relative', 'Relative', aggregateRelative, True],
+    ['relative_baseline', 'Relative', aggregateRelativeBaseline, True],
     ['min', 'Minimum', aggregateMin, True],
     ['max', 'Maximum', aggregateMax, True],
     ['mean', 'Mean', aggregateMean, True],
@@ -127,8 +140,8 @@ parser.add_argument("--exclude-binary", help="exclude these binaries", default=[
 parser.add_argument("--exclude-file", help="exclude these files", default=[], nargs='+', action="extend")
 parser.add_argument("--exclude-function", help="exclude these functions", default=[], nargs='+', action="extend")
 parser.add_argument("--exclude-external", help="exclude external binaries", default=False, action="store_true")
-parser.add_argument('--header', help='override header',default=None)
-parser.add_argument('--names', help='names of the provided profiles',default=[], nargs="+", action="extend")
+parser.add_argument('--header', help='override header', default=None)
+parser.add_argument('--names', help='names of the provided profiles', default=[], nargs="+", action="extend")
 parser.add_argument('-n', '--name', action='append', help='name the provided profiles', default=[])
 parser.add_argument("-t", "--table", help="output csv table")
 parser.add_argument("--coverage", action="store_true", help="output coverage", default=False)
@@ -222,7 +235,7 @@ if (not args.profiles) or (len(args.profiles) <= 0):
 
 try:
     baselineProfile = pickle.load(xopen(args.profile, mode="rb"))
-except:
+except Exception:
     raise Exception(f'Could not open file {args.profile}')
 
 if 'version' not in baselineProfile or baselineProfile['version'] != profileLib.aggProfileVersion:
@@ -286,7 +299,7 @@ for index, errorChart in enumerate(errorCharts):
 
     try:
         profile = pickle.load(xopen(args.profiles[index], mode="rb"))
-    except:
+    except Exception:
         raise Exception(f'Could not open file {args.profiles[index]}')
 
     if 'version' not in profile or profile['version'] != profileLib.aggProfileVersion:
@@ -296,6 +309,14 @@ for index, errorChart in enumerate(errorCharts):
         errorCharts[index]['name'] = args.name[index]
     else:
         errorCharts[index]['name'] = f"{profile['samples'] / profile['samplingTime']:.2f} Hz, {profile['samplingTime']:.2f} s"
+
+    if filterAnything:
+        for key in list(profile['profile'].keys()):
+            if (args.exclude_external and profile['profile'][key][profileLib.AGGSAMPLE.mappedSample][profileLib.SAMPLE.binary] != profile['target']) or \
+               (len(args.exclude_binary) > 0 and profile['profile'][key][profileLib.AGGSAMPLE.mappedSample][profileLib.SAMPLE.binary] in args.exclude_binary) or \
+               (len(args.exclude_file) > 0 and profile['profile'][key][profileLib.AGGSAMPLE.mappedSample][profileLib.SAMPLE.file] in args.exclude_file) or \
+               (len(args.exclude_function) > 0 and profile['profile'][key][profileLib.AGGSAMPLE.mappedSample][profileLib.SAMPLE.function] in args.exclude_function):
+                del profile['profile'][key]
 
     for key in profile['profile']:
         errorChart['fullTotals'][cmpTime] += profile['profile'][key][profileLib.AGGSAMPLE.time]
@@ -311,11 +332,11 @@ for index, errorChart in enumerate(errorCharts):
             if key not in baselineChart['keys']:
                 # Key was never compared before, check thresholds and limitations whether to include or not
                 if (((args.limit_time_top != 0) and (includedKeys >= args.limit_time_top)) or
-                    ((args.limit_energy_top != 0) and (includedKeys >= args.limit_energy_top)) or
-                    ((args.limit_time != 0) and ((includedBaselineTime / baselineChart['fullTotals'][cmpTime]) >= args.limit_time)) or
-                    ((args.limit_energy != 0) and ((includedBaselineEnergy / baselineChart['fullTotals'][cmpEnergy]) >= args.limit_energy)) or
-                    ((args.time_threshold != 0) and ((baselineProfile['profile'][key][profileLib.AGGSAMPLE.time] / baselineChart['fullTotals'][cmpTime]) < args.time_threshold)) or
-                    ((args.energy_threshold != 0) and ((baselineProfile['profile'][key][profileLib.AGGSAMPLE.energy] / baselineChart['fullTotals'][cmpEnergy]) < args.energy_threshold))                ):
+                   ((args.limit_energy_top != 0) and (includedKeys >= args.limit_energy_top)) or
+                   ((args.limit_time != 0) and ((includedBaselineTime / baselineChart['fullTotals'][cmpTime]) >= args.limit_time)) or
+                   ((args.limit_energy != 0) and ((includedBaselineEnergy / baselineChart['fullTotals'][cmpEnergy]) >= args.limit_energy)) or
+                   ((args.time_threshold != 0) and ((baselineProfile['profile'][key][profileLib.AGGSAMPLE.time] / baselineChart['fullTotals'][cmpTime]) < args.time_threshold)) or
+                   ((args.energy_threshold != 0) and ((baselineProfile['profile'][key][profileLib.AGGSAMPLE.energy] / baselineChart['fullTotals'][cmpEnergy]) < args.energy_threshold))):
                     continue
                 baselineChart['keys'].append(key)
                 baselineChart['labels'].append(baselineProfile['profile'][key][profileLib.AGGSAMPLE.label])
@@ -325,7 +346,7 @@ for index, errorChart in enumerate(errorCharts):
                     baselineProfile['profile'][key][profileLib.AGGSAMPLE.energy],   # energy
                     baselineProfile['profile'][key][profileLib.AGGSAMPLE.samples] / baselineProfile['samples'],  # relSamples
                     baselineProfile['profile'][key][profileLib.AGGSAMPLE.time] / baselineProfile['profile'][key][profileLib.AGGSAMPLE.execs],  # execTimes
-                    0 # Share (will be filled in later)
+                    0  # Share (will be filled in later)
                 ])
                 includedBaselineTime += baselineProfile['profile'][key][profileLib.AGGSAMPLE.time]
                 includedBaselineEnergy += baselineProfile['profile'][key][profileLib.AGGSAMPLE.energy]
@@ -388,7 +409,7 @@ for index, _ in enumerate(baselineChart['keys']):
 if errorFunction is not False:
     for index, _ in enumerate(baselineChart['keys']):
         for chart in errorCharts:
-            chart['errors'].append(errorFunction(baselineChart['values'][index][cmpOffset], chart['values'][index][cmpOffset], baselineChart['totals'][cmpOffset], chart['totals'][cmpOffset], chart['weights'][index]))
+            chart['errors'].append(errorFunction(baselineChart['values'][index][cmpOffset], chart['values'][index][cmpOffset], baselineChart['totals'][cmpOffset], chart['totals'][cmpOffset], chart['weights'][index], baselineChart['fullTotals'][cmpOffset], chart['fullTotals'][cmpOffset]))
 
 # names = [ key, name1, name2, name3, name4 ]
 # values = [ key, error1, error2, error3, error4 ]a
@@ -396,14 +417,14 @@ if errorFunction is not False:
 
 
 if aggregateFunction:
-        header += f"{chosenAggregateFunction[1]} "
+    header += f"{chosenAggregateFunction[1]} "
 if errorFunction:
-        header += f"{chosenErrorFunction[1]}"
+    header += f"{chosenErrorFunction[1]}"
 header = header.strip()
 
 
 if args.header is not None:
-    header=args.header
+    header = args.header
 
 if errorFunction is not False and aggregateFunction is False:
     headers = numpy.array([chart['name'] for chart in errorCharts])
@@ -436,7 +457,9 @@ if aggregateFunction is not False:
             chart['errors'] if errorFunction is not False else chartValues[:, cmpOffset],
             baselineChart['totals'][cmpOffset],
             chart['totals'][cmpOffset],
-            chart['weights']
+            chart['weights'],
+            baselineChart['fullTotals'][cmpOffset],
+            chart['fullTotals'][cmpOffset]
         ))
     rows = numpy.append(rows, errors.reshape(-1, 1), axis=1)
     headers = numpy.array([header], dtype=object)
@@ -459,7 +482,7 @@ if aggregateFunction is False:
             headers = numpy.insert(headers, (i * 2), 'Weights')
             rows = numpy.insert(rows, (i * 2) + 1, weights[:, i], axis=1)
 else:
-    header = 'Profile' # baselineProfile['name']
+    header = 'Profile'  # baselineProfile['name']
     rows = rows[::-1]
 
 if (args.table):
@@ -471,7 +494,8 @@ if (args.table):
     for i, x in enumerate(rows):
         table.write(';'.join([f"{y:.16f}" if not isinstance(y, str) else y for y in x]) + "\n")
     table.close()
-    print(f"CSV saved to {args.table}")
+    if not args.quiet:
+        print(f"CSV saved to {args.table}")
 
 if (not args.quiet):
     headers = numpy.append([header], headers)

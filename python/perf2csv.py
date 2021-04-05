@@ -27,6 +27,8 @@ parser.add_argument("perfdata", help="perf-data from perf record")
 parser.add_argument("-o", "--output", help="output csv")
 parser.add_argument("-v", "--vmmap", help="output vmmap")
 parser.add_argument("-t", "--target", help="set target executeable")
+parser.add_argument("--type", choices=['full', 'flat'], default='full', help="create a full or flat profile")
+parser.add_argument("--scale-time", default=1, type=float, help="scale time output")
 parser.add_argument("-p", "--perf", help="use this perf executable")
 parser.add_argument("-e", "--encoding", help="use this perf executable")
 
@@ -67,7 +69,7 @@ print("Processing perf raw data...")
 perf = subprocess.Popen([args.perf if args.perf else 'perf', 'report', '--header', '-D', '-i', args.perfdata], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 encoding = args.encoding if args.encoding else None
 
-prevSampleTime  = None
+prevSampleTime = None
 
 for line in perf.stdout:
     parsed = False
@@ -166,6 +168,28 @@ if len(seenCpus) == 0:
 # Perf raw dump samples are not necessarily ordered
 samples = sorted(samples, key=lambda x: x[0])
 
+pcVector = [0] * (max(seenCpus) + 1)
+profile = []
+flatProfile = {}
+prevTime = samples[0][0]
+for sample in samples:
+    if args.type == 'flat':
+        if sample[2] not in flatProfile:
+            flatProfile[sample[2]] = 0
+        flatProfile[sample[2]] += sample[0] - prevTime
+        prevTime = sample[0]
+    else:
+        pcVector[sample[1]] = sample[2]
+        profile.append([sample[0]] + pcVector)
+
+if args.type == 'flat':
+    for key in flatProfile:
+        profile.append([flatProfile[key], key])
+    seenCpus = [0]
+
+for i, _ in enumerate(profile):
+    profile[i][0] = (float(profile[i][0]) / 1000000000.0) * args.scale_time
+
 if args.output.endswith(".bz2"):
     csvFile = bz2.open(args.output, "wt")
 else:
@@ -176,13 +200,10 @@ for cpu in seenCpus:
     csvFile.write(f';pc{cpu}')
 csvFile.write('\n')
 
-
-pcVector = [0] * (max(seenCpus) + 1)
-for sample in samples:
-    csvFile.write(f'{float(sample[0]) / 1000000000.0:.16f}')
-    pcVector[sample[1]] = sample[2]
+for sample in profile:
+    csvFile.write(f'{sample[0]:.16f}')
     for cpu in seenCpus:
-        csvFile.write(f';{pcVector[cpu]}')
+        csvFile.write(f';0x{sample[cpu+1]:x}')
     csvFile.write('\n')
 
 print(f"{len(samples)} samples extracted")
