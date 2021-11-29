@@ -16,6 +16,10 @@ import statistics
 from xopen import xopen
 
 
+def correct(baseline, value, totalBaseline, totalValue, weight, fullTotalBaseline, fullTotaValue):
+    return min(baseline, value) if value > 0 else 0
+
+
 def error(baseline, value, totalBaseline, totalValue, weight, fullTotalBaseline, fullTotalValue):
     return value - baseline
 
@@ -69,6 +73,16 @@ def aggregateMean(baselines, values, totalBaseline, totalValue, weights, fullTot
 
 
 # values are already processed by errorFunction
+def aggregateError(baselines, values, totalBaseline, totalValue, weights, fullTotalBaseline, fullTotalValue):
+    return ((fullTotalValue - sum(values)) / fullTotalValue) if fullTotalValue != 0 else 0
+
+
+# values are already processed by errorFunction
+def aggregateErrorBaseline(baselines, values, totalBaseline, totalValue, weights, fullTotalBaseline, fullTotalValue):
+    return ((fullTotalBaseline - sum(values)) / fullTotalBaseline) if fullTotalBaseline != 0 else 0
+
+
+# values are already processed by errorFunction
 def aggregateRelativeBaseline(baselines, values, totalBaseline, totalValue, weights, fullTotalBaseline, fullTotalValue):
     return (sum(values) / fullTotalBaseline) if fullTotalBaseline != 0 else 0
 
@@ -97,6 +111,7 @@ def aggregateWeightedRootMeanSquaredError(baselines, values, totalBaseline, tota
 # [ parameter, description, error function,  ]
 errorFunctions = numpy.array([
     ['relative_error', 'Relative Error', relativeError],
+    ['correct', 'Correct', correct],
     ['error', 'Error', error],
     ['absolute_error', 'Absolute Error', absoluteError],
     ['weighted_error', 'Weighted Error', weightedError],
@@ -108,6 +123,8 @@ errorFunctions = numpy.array([
 
 aggregateFunctions = numpy.array([
     ['sum', 'Total', aggregateSum, True],
+    ['error', 'Error', aggregateError, True],
+    ['error_baseline', 'Relative', aggregateErrorBaseline, True],
     ['relative', 'Relative', aggregateRelative, True],
     ['relative_baseline', 'Relative', aggregateRelativeBaseline, True],
     ['min', 'Minimum', aggregateMin, True],

@@ -3,7 +3,6 @@
 import sys
 import os
 import argparse
-import bz2
 import pickle
 import numpy
 import profileLib
@@ -17,10 +16,10 @@ parser.add_argument("-s", "--start", type=float, help="start time (seconds)")
 parser.add_argument("-e", "--end", type=float, help="end time (seconds)")
 parser.add_argument("-i", "--interpolate", type=int, help="interpolate samples")
 parser.add_argument("-a", "--aggregate", help=f"aggregate symbols (default: {' '.join(aggregateDefault)})", choices=profileLib.SAMPLE.names, nargs="+", default=[])
-parser.add_argument("-d", "--delimiter", help=f"aggregate symbol delimiter (default '%(default)s')", default=":")
+parser.add_argument("-d", "--delimiter", help="aggregate symbol delimiter (default '%(default)s')", default=":")
 parser.add_argument("-ea", "--external-aggregate", help=f"aggregate external symbols (default: {' '.join(aggregateDefault)})", choices=profileLib.SAMPLE.names, nargs="+", default=[])
-parser.add_argument("-ed", "--external-delimiter", help=f"delimiter for external symbols (default: ':')", default=None)
-parser.add_argument("--label-none", help=f"label none data (default '%(default)s')", default="_unknown")
+parser.add_argument("-ed", "--external-delimiter", help="delimiter for external symbols (default: ':')", default=None)
+parser.add_argument("--label-none", help="label none data (default '%(default)s')", default="_unknown")
 parser.add_argument("-t", "--table", help="save csv containing all threads and samples with time and power")
 parser.add_argument("--table-gantt", help="save gantt like csv")
 
@@ -47,7 +46,7 @@ if (not args.profile) or (not os.path.isfile(args.profile)):
 print("Reading profile... ")
 try:
     profile = pickle.load(xopen(args.profile, mode="rb"))
-except:
+except Exception:
     raise Exception(f'Could not read file {args.profile}')
 
 

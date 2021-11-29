@@ -18,7 +18,7 @@ LABEL_FOREIGN = '_foreign'
 LABEL_KERNEL  = '_kernel'
 LABEL_UNSUPPORTED = '_unsupported'
 
-cacheVersion = 'c0.2'
+cacheVersion = 'c0.3'
 profileVersion = '0.5'
 aggProfileVersion = 'agg0.9'
 annProfileVersion = 'ann0.1'
@@ -48,9 +48,10 @@ class SAMPLE:
     basicblock  = 4  # str
     line        = 5  # int
     instruction = 6  # str
-    meta        = 7  # int
-    names = ['pc', 'binary', 'file', 'function', 'basicblock', 'line', 'instruction', 'meta']
-    invalid = [None, None, None, None, None, None, None]
+    opcode      = 7  # int
+    meta        = 8  # int
+    names = ['pc', 'binary', 'file', 'function', 'basicblock', 'line', 'instruction', 'opcode', 'meta']
+    invalid = [None, None, None, None, None, None, None, None, None]
 
 
 class META:
@@ -148,6 +149,10 @@ class elfCache:
             hasher.update(afile.read())
         return os.path.abspath(f"{cacheFolder}/{os.path.basename(elf)}_{'i' if unwindInline else ''}{hasher.hexdigest()}")
 
+    def getCache(self, elf):
+        self.openOrCreateCache(elf)
+        return self.caches[elf]
+
     def openOrCreateCache(self, elf: str):
         global disableCache
         if not self.cacheAvailable(elf):
@@ -243,7 +248,8 @@ class elfCache:
 
                 # First step is creating an object dump of the elf file
                 # We disassemble much more than needed however its necesarry for some profilers
-                sObjdump = f"{crossCompile}objdump -Dz --prefix-addresses -j {section} {elf}"
+                sObjdump = f"{crossCompile}objdump -Dwz --prefix-addresses --show-raw-insn -j {section} {elf}"
+                # sObjdump = f"{crossCompile}objdump -Dz --prefix-addresses -j {section} {elf}"
                 pObjdump = subprocess.Popen(sObjdump, shell=True, stdout=subprocess.PIPE, universal_newlines=True)
                 # Remove trailing additional data that begins with '//'
                 # sObjdump = re.sub('[ \t]+(// ).+\n','\n', sObjdump)
@@ -251,29 +257,25 @@ class elfCache:
                 # sObjdump = re.sub('[ \t]+(# ).+\n','\n', sObjdump)
 
                 for line in pObjdump.stdout:
-                    objdumpInstruction = re.compile('([0-9a-fA-F]+) (<.+?(\+0x[0-9a-f-A-F]+)?> [^\t ]+)(\t[^<\t]+)?(.+)?')
-                    funcOffset = re.compile('^<(.+?)(\+0x[0-9a-f-A-F]+)?>$')
-                    match0 = objdumpInstruction.match(line)
+                    objdumpLine = re.compile(r'([0-9a-fA-F]+) <([^+]+)?\+?(0x[0-9a-f-A-F]+)?> ([0-9a-fA-F ]+)[\t]+([^<\t ]+)?(.+)?')
+                    match0 = objdumpLine.match(line)
                     if match0:
-                        # Instruction can be reliably splitted of the second match
-                        funcAndInstr = match0.group(2).rstrip('\n').rsplit(' ', 1)
                         meta = META.normalInstruction
-                        match1 = funcOffset.match(funcAndInstr[0])
-                        if match1.group(2) is None:
+                        if match0.group(3) is None:
                             meta |= META.functionHead | META.basicblockHead
                             functionCounter += 1
+
                         pc = int(match0.group(1), 16)
-                        # match 3 the pc offset in the function, not used here
-                        # match 4 are the function arguments
-                        sample = [pc, name, None, match1.group(1), f'f{functionCounter}', None, funcAndInstr[1], meta]
-                        asm = funcAndInstr[1]
-                        if match0.group(4) is not None:
-                            asm += match0.group(4).rstrip('\n')
-                        if match0.group(5) is not None:
-                            asm += match0.group(5).rstrip('\n')
-                        cache['asm'][pc] = asm.strip()
+                        instr = match0.group(5).rstrip('\n').strip()
+                        opcode = match0.group(4).replace(' ', '').strip()
+                        func = match0.group(1).strip()
+
+                        sample = [pc, name, None, func, f'f{functionCounter}', None, instr, opcode, meta]
+                        asm = instr
+                        if match0.group(6) is not None:
+                            asm += match0.group(6).rstrip('\n').rstrip()
+                        cache['asm'][pc] = asm
                         cache['cache'][pc] = sample
-                        # print(f'0x{pc:x}: {asm.strip()}')
                 pObjdump.stdout.close()
                 returnCode = pObjdump.wait()
                 if returnCode:
@@ -658,10 +660,7 @@ class sampleParser:
                 return binary
         return False
 
-    def parsePC(self, pc):
-        if pc in self._localSampleCache:
-            return self._localSampleCache[pc]
-
+    def getSampleFromPC(self, pc):
         binary = self.getBinaryFromPC(pc)
         sample = None
 
@@ -690,6 +689,13 @@ class sampleParser:
             sample = copy(SAMPLE.invalid)
             sample[SAMPLE.pc] = pc
 
+        return sample
+
+    def parsePC(self, pc):
+        if pc in self._localSampleCache:
+            return self._localSampleCache[pc]
+
+        sample = self.getSampleFromPC(pc)
         result = self.mapper.mapValues(sample)
 
         self._localSampleCache[pc] = result

@@ -2,15 +2,11 @@
 
 import sys
 import argparse
-import bz2
 import pickle
-import numpy
-import textwrap
 import tabulate
 import profileLib
 import gc
 import pandas
-import copy
 import re
 from xopen import xopen
 
@@ -20,18 +16,18 @@ aggregateDefault = [profileLib.SAMPLE.names[profileLib.SAMPLE.binary], profileLi
 
 parser = argparse.ArgumentParser(description="Annotate profiles on asm and source level.")
 parser.add_argument("profiles", help="postprocessed profiles from pperf", nargs="+")
-parser.add_argument("--mode", choices=['mean', 'add'], default='mean', help=f"compute mean profiles or accumulated profiles (default: %(default)s)")
-parser.add_argument("--annotate", choices=['asm'], default='asm', help=f"what to annotate (default: %(default)s)")
+parser.add_argument("--mode", choices=['mean', 'add'], default='mean', help="compute mean profiles or accumulated profiles (default: %(default)s)")
+parser.add_argument("--annotate", choices=['asm'], default='asm', help="what to annotate (default: %(default)s)")
 
-#parser.add_argument("-a", "--aggregate", help=f"aggregate symbols (default: %{', '.join(aggregateDefault)}s)", choices=profileLib.SAMPLE.names, nargs="+", default=[])
-#parser.add_argument("-d", "--delimiter", help=f"aggregate symbol delimiter (default '%(default)s')", default=":")
-#parser.add_argument("-ea", "--external-aggregate", help=f"aggregate external symbols (default: %{', '.join(aggregateDefault)}s)", choices=profileLib.SAMPLE.names, nargs="+", default=[])
-#parser.add_argument("-ed", "--external-delimiter", help=f"delimiter for external symbols (default: ':')", default=None)
+# parser.add_argument("-a", "--aggregate", help=f"aggregate symbols (default: %{', '.join(aggregateDefault)}s)", choices=profileLib.SAMPLE.names, nargs="+", default=[])
+# parser.add_argument("-d", "--delimiter", help=f"aggregate symbol delimiter (default '%(default)s')", default=":")
+# parser.add_argument("-ea", "--external-aggregate", help=f"aggregate external symbols (default: %{', '.join(aggregateDefault)}s)", choices=profileLib.SAMPLE.names, nargs="+", default=[])
+# parser.add_argument("-ed", "--external-delimiter", help=f"delimiter for external symbols (default: ':')", default=None)
 
 parser.add_argument("--precision", type=int, default=4, help="display precision for time and energy (default: %(default)s)")
 parser.add_argument("--share-precision", type=int, default=2, help="display precision for shares (default: %(default)s)")
 parser.add_argument("--share", default=False, action="store_true", help="display metirc shares")
-parser.add_argument("--no-share", default=False, action="store_true" , help="hide metric shares (default)")
+parser.add_argument("--no-share", default=False, action="store_true", help="hide metric shares (default)")
 parser.add_argument("-s", "--show", choices=['time', 'energy', 'samples'], default=['samples'], nargs="+", help="show time, energy and/or samples")
 parser.add_argument("--meta", default=False, action="store_true", help="display meta informations")
 
@@ -54,15 +50,15 @@ parser.add_argument("--instruction-sample-threshold", type=float, help="include 
 parser.add_argument("--level", choices=['binary', 'function', 'instruction'], default='instruction', help="until which level to output")
 parser.add_argument("--external-level", choices=['binary', 'function', 'instruction'], default='instruction', help="until which level to output for external binaries")
 
-#parser.add_argument("--exclude-binary", help="exclude these binaries", default=[], action="append")
-#parser.add_argument("--exclude-file", help="exclude these files", default=[], action="append")
-#parser.add_argument("--exclude-function", help="exclude these functions", default=[], action="append")
-#parser.add_argument("--exclude-external", help="exclude external binaries", default=False, action="store_true")
+# parser.add_argument("--exclude-binary", help="exclude these binaries", default=[], action="append")
+# parser.add_argument("--exclude-file", help="exclude these files", default=[], action="append")
+# parser.add_argument("--exclude-function", help="exclude these functions", default=[], action="append")
+# parser.add_argument("--exclude-external", help="exclude external binaries", default=False, action="store_true")
 
 parser.add_argument("--less-memory", help="opens only one input profile at a time", action="store_true", default=False)
-#parser.add_argument("-t", "--table", help="output csv table")
+# parser.add_argument("-t", "--table", help="output csv table")
 parser.add_argument("-o", "--output", help="output annotated profile")
-#parser.add_argument("--cut-off-symbols", help="number of characters symbol to insert line break (positive) or cut off (negative)", type=int, default=64)
+# parser.add_argument("--cut-off-symbols", help="number of characters symbol to insert line break (positive) or cut off (negative)", type=int, default=64)
 parser.add_argument("--account-latency", action="store_true", help="substract latency")
 parser.add_argument("--use-wall-time", action="store_true", help="use sample wall time")
 parser.add_argument("--use-cpu-time", action="store_true", help="use cpu time (default)")
@@ -107,7 +103,7 @@ annotatedProfile = None
 for i, fileProfile in enumerate(args.profiles):
     try:
         profile = pickle.load(xopen(fileProfile, mode="rb"))
-    except:
+    except Exception:
         raise Exception(f'Could not read file {fileProfile}')
 
     if i == 0 and len(args.profiles) == 1 and 'version' in profile and profile['version'] == profileLib.annProfileVersion:
@@ -138,7 +134,7 @@ if annotatedProfile is None:
     modeFac = 1
     if args.mode == 'mean':
         modeFac /= len(inputProfiles)
-   
+
     # aggregateKeys = [profileLib.SAMPLE.binary, profileLib.SAMPLE.file, profileLib.SAMPLE.function, profileLib.SAMPLE.pc]
     annotatedProfile = {
         'version': profileLib.annProfileVersion,
@@ -158,16 +154,16 @@ if annotatedProfile is None:
         raise Exception('Profiles do not contain any samples from a binary!')
 
     elfCache = profileLib.elfCache()
-    caches = { binary: elfCache.getRawCache(cacheMap[binary]) for binary in cacheMap }
+    caches = {binary: elfCache.getRawCache(cacheMap[binary]) for binary in cacheMap}
     # annotation = pandas.DataFrame(columns=['pc', 'binary', 'file', 'function', 'basicblock', 'line', 'instruction', 'meta', 'asm', 'source', 'time', 'energy', 'samples'])
     annotation = pandas.DataFrame()
 
     print('Reading in assembly and source', flush=True, file=sys.stderr)
-    asm = pandas.concat([pandas.DataFrame([[cacheName] + vals for vals in cache['cache'].values()], columns=['cache', 'pc', 'binary', 'file', 'function', 'basicblock', 'line', 'instruction', 'meta']) for cacheName, cache  in caches.items()], ignore_index=True)
+    asm = pandas.concat([pandas.DataFrame([[cacheName] + vals for vals in cache['cache'].values()], columns=['cache', 'pc', 'binary', 'file', 'function', 'basicblock', 'line', 'instruction', 'opcode', 'meta']) for cacheName, cache in caches.items()], ignore_index=True)
     asm['args'] = asm.apply(lambda r: (re.split(' |\t', caches[r['cache']]['asm'][r['pc']], 1) + [''])[1].strip(), axis=1)
 
     source = None
-    sourceFrames = [pandas.DataFrame({'binary': b, 'file': f, 'line': range(1, len(caches[b]['source'][f])+1), 'source' : caches[b]['source'][f]}) for b in caches for f in caches[b]['source'] if caches[b]['source'][f] is not None]
+    sourceFrames = [pandas.DataFrame({'binary': b, 'file': f, 'line': range(1, len(caches[b]['source'][f]) + 1), 'source': caches[b]['source'][f]}) for b in caches for f in caches[b]['source'] if caches[b]['source'][f] is not None]
     if len(sourceFrames) > 0:
         source = pandas.concat(sourceFrames)
     del sourceFrames
@@ -179,7 +175,7 @@ if annotatedProfile is None:
         if profile is None:
             try:
                 profile = pickle.load(xopen(args.profiles[i], mode="rb"))
-            except:
+            except Exception:
                 raise Exception(f'Could not read file {args.profiles[i]}')
 
         if annotatedProfile['toolchain'] is None:
@@ -211,7 +207,7 @@ if annotatedProfile is None:
 
                 time = thread[1] if args.use_cpu_time else sampleWallTime
                 if args.account_latency:
-                    time = max(useSampleTime - avgLatencyTime, 0.0)
+                    time = max(time - avgLatencyTime, 0.0)
 
                 energy = sample[0] * time * (time / (sampleWallTime * activeCores)) if sampleWallTime != 0 else 0
 
@@ -231,7 +227,7 @@ if annotatedProfile is None:
     print('Correlating data', flush=True, file=sys.stderr)
     asm[['time', 'energy', 'samples']] = asm.apply(lambda r: aggregate[r['binary']][r['pc']] if r['binary'] in aggregate and r['pc'] in aggregate[r['binary']] else [0, 0, 0], axis=1, result_type='expand')
     if source is not None:
-        source = source.join(asm.groupby(['binary', 'file', 'line'], as_index=False)[['time','energy','samples']].sum().set_index(['binary', 'file', 'line']), on=['binary', 'file', 'line'])
+        source = source.join(asm.groupby(['binary', 'file', 'line'], as_index=False)[['time', 'energy', 'samples']].sum().set_index(['binary', 'file', 'line']), on=['binary', 'file', 'line'])
     print('Cleaning up', flush=True, file=sys.stderr)
 
     # Fill in 0 values for time, energy and samples
@@ -240,7 +236,7 @@ if annotatedProfile is None:
         source[['time', 'energy', 'samples']] = source[['time', 'energy', 'samples']].fillna(0)
 
     # Line must be object
-    annotatedProfile['asm'] = asm.astype({'cache': 'object', 'pc': 'uint64', 'binary': 'object', 'file': 'object', 'function': 'object', 'basicblock': 'object', 'line': 'uint64', 'instruction': 'object', 'meta': 'uint64', 'args': 'object', 'time': 'float64', 'energy': 'float64', 'samples': 'float64'})
+    annotatedProfile['asm'] = asm.astype({'cache': 'object', 'pc': 'uint64', 'binary': 'object', 'file': 'object', 'function': 'object', 'basicblock': 'object', 'line': 'uint64', 'instruction': 'object', 'opcode': 'object', 'meta': 'uint64', 'args': 'object', 'time': 'float64', 'energy': 'float64', 'samples': 'float64'})
     if source is not None:
         annotatedProfile['source'] = source.astype({'binary': 'object', 'file': 'object', 'line': 'uint64', 'source': 'object', 'time': 'float64', 'energy': 'float64', 'samples': 'uint64'})
 
@@ -297,13 +293,13 @@ order = asm.groupby(['binary', 'function'])['samples'].sum().sort_values(ascendi
 
 
 metaNames = {
-    profileLib.META.branchInstruction        : 'BRANCH',
-    profileLib.META.branchTarget             : 'TARGET',
-    profileLib.META.dynamicBranchTarget      : 'DYN_TARGET',
-    profileLib.META.functionHead             : 'FN_HEAD',
-    profileLib.META.functionBack             : 'FN_BACK',
-    profileLib.META.basicblockHead           : 'BB_HEAD',
-    profileLib.META.basicblockBack           : 'BB_BACK',
+    profileLib.META.branchInstruction: 'BRANCH',
+    profileLib.META.branchTarget: 'TARGET',
+    profileLib.META.dynamicBranchTarget: 'DYN_TARGET',
+    profileLib.META.functionHead: 'FN_HEAD',
+    profileLib.META.functionBack: 'FN_BACK',
+    profileLib.META.basicblockHead: 'BB_HEAD',
+    profileLib.META.basicblockBack: 'BB_BACK',
 }
 
 pandas.options.mode.chained_assignment = None
@@ -320,13 +316,12 @@ columns = (((['_tshare_' + x for x in args.show]) + (['_bshare_' + x for x in ar
 tabulateStyle = 'presto'
 shareFloatFmt = f'3.{args.share_precision}f'
 columnNames = {'time': 'Time [s]', 'energy': 'Energy [J]', 'samples': 'Samples #'}
-columnFmts = {'time' : f'10.{args.precision}f', 'energy' : f'10.{args.share_precision}f', 'samples' : '.0f'}
-stats = { 'time' : annotatedProfile['asm']['time'].sum(), 'energy': annotatedProfile['asm']['energy'].sum(), 'samples': annotatedProfile['asm']['samples'].sum()}
+columnFmts = {'time': f'10.{args.precision}f', 'energy': f'10.{args.share_precision}f', 'samples': '.0f'}
+stats = {'time': annotatedProfile['asm']['time'].sum(), 'energy': annotatedProfile['asm']['energy'].sum(), 'samples': annotatedProfile['asm']['samples'].sum()}
 
 # print('=' * 80)
 print(tabulate.tabulate([
-    [(stats[x]) for x in args.show]
-    + ['Total']
+    [(stats[x]) for x in args.show] + ['Total']
 ], tablefmt=tabulateStyle, headers=[columnNames[x] for x in args.show] + [''], floatfmt=[columnFmts[x] for x in args.show]))
 
 print('')
@@ -334,12 +329,10 @@ print('')
 for bi, binary in enumerate(order['binary'].unique()):
     bAsm = asm[asm['binary'] == binary]
     bTotalAsm = annotatedProfile['asm'][annotatedProfile['asm']['binary'] == binary]
-    bStats = { 'time' : bTotalAsm['time'].sum(), 'energy': bTotalAsm['energy'].sum(), 'samples': bTotalAsm['samples'].sum() }
+    bStats = {'time': bTotalAsm['time'].sum(), 'energy': bTotalAsm['energy'].sum(), 'samples': bTotalAsm['samples'].sum()}
 
     print(tabulate.tabulate([
-        ([(bStats[x] * 100 / stats[x]) for x in args.show] if args.share else [])
-        + [(bStats[x]) for x in args.show]
-        + [binary]
+        ([(bStats[x] * 100 / stats[x]) for x in args.show] if args.share else []) + [(bStats[x]) for x in args.show] + [binary]
     ], tablefmt=tabulateStyle, headers=(['(%)'] * len(args.show) if args.share else []) + [columnNames[x] for x in args.show] + [''], floatfmt=([shareFloatFmt] * len(args.show) if args.share else []) + [columnFmts[x] for x in args.show], showindex=False))
     print('')
 
@@ -350,12 +343,10 @@ for bi, binary in enumerate(order['binary'].unique()):
     for fi, function in enumerate(order[order['binary'] == binary]['function'].unique()):
         fAsm = asm[(asm['binary'] == binary) & (asm['function'] == function)]
         fTotalAsm = annotatedProfile['asm'][(annotatedProfile['asm']['binary'] == binary) & (annotatedProfile['asm']['function'] == function)]
-        fStats = { 'time' : fTotalAsm['time'].sum(), 'energy': fTotalAsm['energy'].sum(), 'samples': fTotalAsm['samples'].sum() }
+        fStats = {'time': fTotalAsm['time'].sum(), 'energy': fTotalAsm['energy'].sum(), 'samples': fTotalAsm['samples'].sum()}
 
         print(tabulate.tabulate([
-            ([(fStats[x] * 100 / stats[x]) for x in args.show] if args.share else [])
-            + ([(fStats[x] * 100 / bStats[x]) for x in args.show] if args.share else [])
-            + [(fStats[x]) for x in args.show] + [function]
+            ([(fStats[x] * 100 / stats[x]) for x in args.show] if args.share else []) + ([(fStats[x] * 100 / bStats[x]) for x in args.show] if args.share else []) + [(fStats[x]) for x in args.show] + [function]
         ], tablefmt=tabulateStyle, headers=(['(%)'] * 2 * len(args.show) if args.share else []) + [columnNames[x] for x in args.show] + [''], floatfmt=([shareFloatFmt] * 2 * len(args.show) if args.share else []) + [columnFmts[x] for x in args.show], showindex=False))
         print('')
 
@@ -368,17 +359,10 @@ for bi, binary in enumerate(order['binary'].unique()):
             for x in args.show:
                 fAsm['_tshare_' + x] = fAsm.apply(lambda r: r[x] * 100 / stats[x], axis=1)
                 fAsm['_bshare_' + x] = fAsm.apply(lambda r: r[x] * 100 / bStats[x], axis=1)
-                fAsm['_fshare_' + x] = fAsm.apply(lambda r: r[x] * 100/ fStats[x], axis=1)
+                fAsm['_fshare_' + x] = fAsm.apply(lambda r: r[x] * 100 / fStats[x], axis=1)
 
         fAsm = fAsm.replace({'basicblock': r'^f[0-9]+b'}, {'basicblock': ''}, regex=True)
-        print(
-           # re.sub(
-           #     r' 0.00 ',
-           #     '      ',
-                tabulate.tabulate(fAsm[columns], tablefmt=tabulateStyle,
-                                  headers = ((['(%)'] * 3 * len(args.show)) if args.share else []) + [columnNames[x] for x in args.show] + ['Addr', 'BB'] + (['Meta'] if args.meta else []) + ['Instr', 'Asm'], floatfmt=([shareFloatFmt] * 3 * len(args.show) if args.share else []) + [columnFmts[x] for x in args.show], showindex=False)
-           # )
-        )
+        print(tabulate.tabulate(fAsm[columns], tablefmt=tabulateStyle, headers=((['(%)'] * 3 * len(args.show)) if args.share else []) + [columnNames[x] for x in args.show] + ['Addr', 'BB'] + (['Meta'] if args.meta else []) + ['Instr', 'Asm'], floatfmt=([shareFloatFmt] * 3 * len(args.show) if args.share else []) + [columnFmts[x] for x in args.show], showindex=False))
         print('')
 
 exit(0)
