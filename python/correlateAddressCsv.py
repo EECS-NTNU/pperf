@@ -31,7 +31,7 @@ parser.add_argument("--label-none", help="label unknown samples", default="_unkn
 parser.add_argument("--filter-unknown", help="filter unknown addresses", default=False, action="store_true")
 parser.add_argument("--only-filter-unknown", action="store_true", help="only filter addresses which are found in binary/vmmap", default=False)
 parser.add_argument("--disable-cache", action="store_true", help="do not create or use prepared address caches", default=False)
-parser.add_argument("--delimiter", default=';', help="correlate selector (default: '%')", type=str,)
+parser.add_argument("--delimiter", default=';', help="correlate selector (default: '%(default)s')", type=str)
 
 
 def selector(ilist):
