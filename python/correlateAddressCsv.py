@@ -160,13 +160,12 @@ for line in csvFile:
 
     pc = int(line[headerCol], 0)
 
-    if not pc in seenPCs:
-        seenPCs.append(pc)
-
     found = (sampleParser.isPCKnown(pc) and pc in sampleParser.cache.getCache(sampleParser.getBinaryFromPC(pc)['path'])['cache']) if sampleParser is not None else (pc in binaryCache.caches[args.binary]['cache'])
 
     if args.filter_unknown and not found:
         continue
+
+    seenPCs.append(pc)
 
     if args.only_filter_unknown:
         outputCsv.writerow(line)
@@ -180,6 +179,7 @@ for line in csvFile:
         outputCsv.writerow(line[:headerCol + 1] + [args.label_none if x is None else x for x in selector(sample)] + line[headerCol + 1:])
 
 if args.fill_addresses:
+    seenPCs = list(set(seenPCs))
     caches = []
     if colCount is None:
         colCount = headerCol
