@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import sys
-import bz2
+import xopen
 import re
 import os
 import subprocess
@@ -570,10 +570,7 @@ class sampleParser:
             raise Exception(f"File '{fromFile}' not found")
 
         if (fromFile):
-            if fromFile.endswith("bz2"):
-                fromBuffer = bz2.open(fromFile, 'rt').read()
-            else:
-                fromBuffer = open(fromFile, "r").read()
+            fromBuffer = xopen.xopen(fromFile, "r").read()
 
         for line in fromBuffer.split("\n"):
             if (len(line) > 2):
@@ -620,10 +617,7 @@ class sampleParser:
         if (fromFile and not os.path.isfile(fromFile)):
             raise Exception(f"File '{fromFile}' not found")
         if (fromFile):
-            if fromFile.endswith("bz2"):
-                fromBuffer = bz2.open(fromFile, 'rt').read()
-            else:
-                fromBuffer = open(fromFile, "r").read()
+            fromBuffer = xopen.xopen(fromFile, "r").read()
 
         for symbol in fromBuffer.split('\n'):
             s = symbol.split(" ")

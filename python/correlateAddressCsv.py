@@ -15,7 +15,7 @@ correlateSelectorNames = profileLib.SAMPLE.names.copy() + ['asm']
 correlateSelector = ['binary', 'function', 'basicblock', 'line', 'instruction', 'asm']
 correlateISelector = []
 
-parser = argparse.ArgumentParser(description="Parse sthem csv exports.")
+parser = argparse.ArgumentParser(description="Correlate address csv binary")
 parser.add_argument("input", nargs="?", help="input csv")
 parser.add_argument("-o", "--output", help="output csv", default=None)
 parser.add_argument("-b", "--binary", help="correlate to this single binary (only static!)")
@@ -23,11 +23,11 @@ parser.add_argument("-v", "--vmmap", help="use vmmap to correlate binaries")
 parser.add_argument("-s", "--search-path", help="search paths for vmmap binaries", default=[], type=str, nargs="+")
 parser.add_argument("-ks", "--kallsyms", help="kernel symbols when using vmmap")
 parser.add_argument("--selector", default=None, help=f"correlate selector (default: {' '.join(correlateSelector)})", type=str, nargs='+')
-parser.add_argument("--with-asm", help="include assembler", action="store_true", default=False)
 parser.add_argument("--address-column", help="specify the address columm name", type=str, default=None)
 parser.add_argument("--address-icolumn", help="specify the address columm index", type=int, default=0)
 parser.add_argument("--no-header", help="input file does not contain a header row", action="store_true", default=False)
 parser.add_argument("--label-none", help="label unknown samples", default="_unknown")
+parser.add_argument("--all-addresses", help="output all addresses from the binary", default=False, action="store_true")
 parser.add_argument("--filter-unknown", help="filter unknown addresses", default=False, action="store_true")
 parser.add_argument("--only-filter-unknown", action="store_true", help="only filter addresses which are found in binary/vmmap", default=False)
 parser.add_argument("--disable-cache", action="store_true", help="do not create or use prepared address caches", default=False)
@@ -128,6 +128,7 @@ else:
     outputCsv = csv.writer(sys.stdout, delimiter=args.delimiter)
 
 headerCol = args.address_icolumn
+colCount = None
 
 if not args.no_header:
     for header in csvFile:
@@ -143,14 +144,23 @@ if not args.no_header:
             sys.exit(1)
         sample = profileLib.SAMPLE.names + ['asm']
         outputCsv.writerow(header[:headerCol + 1] + selector(sample) + header[headerCol + 1:])
+        colCount = len(header)
         break
 
 invalidSample = profileLib.SAMPLE.invalid.copy() + [None]
 
+seenPCs = []
+
 for line in csvFile:
     if line[0].startswith('#'):
         continue
+    if colCount is None:
+        colCount = len(line)
+
     pc = int(line[headerCol], 0)
+
+    if not pc in seenPCs:
+        seenPCs.append(pc)
 
     found = (sampleParser.isPCKnown(pc) and pc in sampleParser.cache.getCache(sampleParser.getBinaryFromPC(pc)['path'])['cache']) if sampleParser is not None else (pc in binaryCache.caches[args.binary]['cache'])
 
@@ -168,5 +178,22 @@ for line in csvFile:
 
         outputCsv.writerow(line[:headerCol + 1] + [args.label_none if x is None else x for x in selector(sample)] + line[headerCol + 1:])
 
+if args.all_addresses:
+    caches = []
+    if colCount is None:
+        colCount = headerCol
+    if sampleParser is None :
+        caches.append(binaryCache.caches[args.binary])
+    else:
+        for binary in sampleParser.binaries:
+            sampleParser.cache.openOrCreateCache(binary['path'])
+            caches.append(sampleParser.cache.caches[binary['path']])
+
+    for cache in caches:
+        for pc in [x for x in cache['cache'] if x not in seenPCs]:
+            sample = cache['cache'][pc] + [cache['asm'][pc]]
+            outputCsv.writerow(([''] * headerCol) + [f'0x{pc:x}'] + [args.label_none if x is None else x for x in selector(sample)] + ([''] * (colCount - 1 - headerCol)))
+
+        
 if (args.output):
     outputFile.close()
