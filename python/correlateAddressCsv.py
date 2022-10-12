@@ -27,7 +27,8 @@ parser.add_argument("--address-column", help="specify the address columm name", 
 parser.add_argument("--address-icolumn", help="specify the address columm index", type=int, default=0)
 parser.add_argument("--no-header", help="input file does not contain a header row", action="store_true", default=False)
 parser.add_argument("--label-none", help="label unknown samples", default="_unknown")
-parser.add_argument("--all-addresses", help="output all addresses from the binary", default=False, action="store_true")
+parser.add_argument("--fill-addresses", help="fill addresses not seen in input", default=False, action="store_true")
+parser.add_argument("--fill-columns", help="use this value for remaining columns when filling in addresses (default: '')", default='', type=str)
 parser.add_argument("--filter-unknown", help="filter unknown addresses", default=False, action="store_true")
 parser.add_argument("--only-filter-unknown", action="store_true", help="only filter addresses which are found in binary/vmmap", default=False)
 parser.add_argument("--disable-cache", action="store_true", help="do not create or use prepared address caches", default=False)
@@ -178,7 +179,7 @@ for line in csvFile:
 
         outputCsv.writerow(line[:headerCol + 1] + [args.label_none if x is None else x for x in selector(sample)] + line[headerCol + 1:])
 
-if args.all_addresses:
+if args.fill_addresses:
     caches = []
     if colCount is None:
         colCount = headerCol
@@ -192,7 +193,7 @@ if args.all_addresses:
     for cache in caches:
         for pc in [x for x in cache['cache'] if x not in seenPCs]:
             sample = cache['cache'][pc] + [cache['asm'][pc]]
-            outputCsv.writerow(([''] * headerCol) + [f'0x{pc:x}'] + [args.label_none if x is None else x for x in selector(sample)] + ([''] * (colCount - 1 - headerCol)))
+            outputCsv.writerow(([args.fill_columns] * headerCol) + [f'0x{pc:x}'] + [args.label_none if x is None else x for x in selector(sample)] + ([args.fill_columns] * (colCount - 1 - headerCol)))
 
         
 if (args.output):
