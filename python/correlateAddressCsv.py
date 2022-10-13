@@ -179,7 +179,7 @@ for line in csvFile:
         outputCsv.writerow(line[:headerCol + 1] + [args.label_none if x is None else x for x in selector(sample)] + line[headerCol + 1:])
 
 if args.fill_addresses:
-    seenPCs = list(set(seenPCs))
+    seenPCs = set(seenPCs)
     caches = []
     if colCount is None:
         colCount = headerCol
