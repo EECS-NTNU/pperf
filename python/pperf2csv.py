@@ -80,22 +80,22 @@ if not args.no_comment:
 
 outputCSV.write(args.delimiter.join(['time', 'cpu_time', 'thread_id', 'address', 'pmu_' + ['custom', 'current', 'voltage', 'power'][magic]]) + "\n")
 
-startWallTimeMs = None
-lastWallTimeMs = None
+startWallTimeUs = None
+lastWallTimeUs = None
 
 for i in range(sampleCount):
     try:
-        (wallTimeMs, pmuValue, threadCount, ) = struct.unpack_from(endianess + "Q" + pmuCode + "I", binProfile, binOffset)
+        (wallTimeUs, pmuValue, threadCount, ) = struct.unpack_from(endianess + "Q" + pmuCode + "I", binProfile, binOffset)
         binOffset += 8 + pmuSize + 4
     except Exception as e:
         raise Exception("unexcepted end of input file")
 
-    if lastWallTimeMs is not None and wallTimeMs < lastWallTimeMs:
+    if lastWallTimeUs is not None and wallTimeUs < lastWallTimeUs:
       raise Exception("unexpected sample time wall time (smaller than previous' samples)")
 
-    normWallTimeMs = (wallTimeMs - startWallTimeMs) if startWallTimeMs is not None else 0
-    startWallTimeMs = startWallTimeMs if startWallTimeMs is not None else wallTimeMs
-    lastWallTimeMs = wallTimeMs
+    normWallTimeUs = (wallTimeUs - startWallTimeUs) if startWallTimeUs is not None else 0
+    startWallTimeUs = startWallTimeUs if startWallTimeUs is not None else wallTimeUs
+    lastWallTimeUs = wallTimeUs
 
     for j in range(threadCount):
         try:
@@ -103,7 +103,7 @@ for i in range(sampleCount):
           binOffset += 4 + 8 + 8
         except Exception as e:
           raise Exception("unexcepted end of input file")
-        outputCSV.write(args.delimiter.join(map(str, [normWallTimeMs / 1000000.0, cpuTimeNs / 1000000000.0, threadId, f"0x{address:x}", pmuValue if args.pmu_type != 'binary' else '0x' + binascii.hexlify(pmuValue).decode('utf-8')])) + "\n")
+        outputCSV.write(args.delimiter.join(map(str, [normWallTimeUs / 1000000.0, cpuTimeNs / 1000000000.0, threadId, f"0x{address:x}", pmuValue if args.pmu_type != 'binary' else '0x' + binascii.hexlify(pmuValue).decode('utf-8')])) + "\n")
 
 if args.output:
   outputCSV.close()
