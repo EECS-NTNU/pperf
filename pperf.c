@@ -1,4 +1,5 @@
 #include "pperf.h"
+#include <stdbool.h>
 
 //#define ESTIMATE_LATENCY
 //#define PC_ONLY
@@ -20,6 +21,7 @@
 #define PTRACE_O_EXITKILL 0
 #endif
 
+
 #define PTRACE_WAIT(target, status) do { \
     do { \
         target = waitpid(-1, &status, __WALL);   \
@@ -32,6 +34,9 @@
 #define PTRACE_CONTINUE(target, signal) \
         _ptrace_return = ptrace(PTRACE_CONT, target, NULL, signal) 
 
+#ifndef TRACEE_INTERUPT_SIGNAL
+#define TRACEE_INTERUPT_SIGNAL SIGUSR2
+#endif
 
 unsigned int getOnlineCPUIds(unsigned int **onlineCPUs) {
     char *buf = NULL;
@@ -43,7 +48,7 @@ unsigned int getOnlineCPUIds(unsigned int **onlineCPUs) {
         return 0;
     while (getline(&buf, &n, fd) != -1) {
         if (strstr(buf, "processor") == buf) {
-            if (sscanf(buf, "processor%s%u", buf, &id) == 2) {
+            if (sscanf(buf, "processor%255s%u", buf, &id) == 2) {
                 if (*onlineCPUs == NULL) {
                     *onlineCPUs = malloc(c * sizeof(unsigned int));
                 } else {
@@ -68,11 +73,18 @@ struct task {
     uint64_t cputime;
 } __attribute__((packed));
 
+struct trackTask {
+  pid_t tid;
+  bool thread;
+  FILE *schedstat;
+};
+
 int getCPUTimeFromSchedstat(FILE *schedstat, uint64_t *cputime) {
 #ifdef PC_ONLY
     return 0;
 #endif
-    if (freopen(NULL, "r", schedstat) == NULL)
+    schedstat = freopen(NULL, "r", schedstat);
+    if (schedstat == NULL)
         return 1;
     if (fscanf(schedstat, "%lu", cputime) == 1)
         return 0;
@@ -83,82 +95,97 @@ struct taskList {
     pid_t root;
     uint32_t count;
     uint32_t allocCount;
-    struct task *list;
-    FILE **schedstats;
+    struct task *trace;
+    struct trackTask *tasks;
 };
 
 struct taskList tasks = {};
 
 int addTask(pid_t const task) {
-    static char schedfile[1024] = {};
-    if (tasks.allocCount == 0) {
-        tasks.count = 0;
-        tasks.allocCount = 1;
-        tasks.list = (struct task *) malloc(sizeof(struct task));
-        tasks.schedstats = (FILE **) malloc(sizeof(FILE *));
-        if (tasks.list == NULL || tasks.schedstats == NULL)
-            return 1;
-    } else if (tasks.count == tasks.allocCount) {
-        tasks.allocCount *= 2;
-        tasks.list = (struct task *) realloc(tasks.list, tasks.allocCount * sizeof(struct task));
-        tasks.schedstats = (FILE **) realloc(tasks.schedstats, tasks.allocCount * sizeof(FILE *));
-        if (tasks.list == NULL || tasks.schedstats == NULL)
-            return 1;
-    }
-    snprintf(schedfile, 1024, "/proc/%d/task/%d/schedstat", tasks.root, task);
-    tasks.schedstats[tasks.count] = fopen(schedfile, "r");
-    if (tasks.schedstats[tasks.count] == NULL) {
-        debug_printf("[DEBUG] Could not open %s\n", schedfile);
-        return 1;
-    }
-    tasks.list[tasks.count].tid = task;
-    tasks.list[tasks.count].pc = 0;
-    tasks.count++;
-    return 0;
+  static char schedfile[1024] = {};
+  if (tasks.allocCount == 0) {
+    tasks.count = 0;
+    tasks.allocCount = 1;
+    tasks.trace = (struct task *) malloc(sizeof(struct task));
+    tasks.tasks = (struct trackTask *) malloc(sizeof(struct trackTask));
+    if (tasks.trace == NULL || tasks.tasks == NULL)
+      return 1;
+  } else if (tasks.count == tasks.allocCount) {
+    tasks.allocCount *= 2;
+    tasks.trace = (struct task *) realloc(tasks.trace, tasks.allocCount * sizeof(struct task));
+    tasks.tasks = (struct trackTask *) realloc(tasks.tasks, tasks.allocCount * sizeof(struct trackTask));
+    if (tasks.trace == NULL || tasks.tasks == NULL)
+      return 1;
+  }
+  snprintf(schedfile, 1024, "/proc/%d/task/%d/schedstat", tasks.root, task);
+  tasks.tasks[tasks.count].tid = task;
+  tasks.tasks[tasks.count].thread = tasks.root != task;
+  tasks.tasks[tasks.count].schedstat = fopen(schedfile, "r");
+
+  if (tasks.tasks[tasks.count].schedstat == NULL) {
+    snprintf(schedfile, 1024, "/proc/%d/task/%d/schedstat", task, task);
+    tasks.tasks[tasks.count].thread = false;
+    tasks.tasks[tasks.count].schedstat = fopen(schedfile, "r");
+    if (tasks.tasks[tasks.count].schedstat == NULL)
+      return 1;
+  }
+
+  tasks.trace[tasks.count].tid = task;
+  tasks.count++;
+  return 0;
 }
 
 int removeTaskIndex(uint32_t const i) {
-    if (i < tasks.count) {
-        tasks.count--;
-        fclose(tasks.schedstats[i]);
-        for (unsigned int j = i; j < tasks.count; j++) {
-            tasks.list[j].tid = tasks.list[j+1].tid;
-            tasks.schedstats[j] = tasks.schedstats[j+1];
-        }
-        return 0;
+  if (i < tasks.count) {
+    fclose(tasks.tasks[i].schedstat);
+    tasks.count--;
+    for (unsigned int j = i; j < tasks.count; j++) {
+      tasks.trace[j].tid = tasks.trace[j+1].tid;
+      memcpy(&tasks.tasks[j], &tasks.tasks[j+1], sizeof(struct trackTask));
     }
-    return 1;
+    return 0;
+  }
+  return 1;
 }
 
 int removeTask(pid_t const task) {
-    for (unsigned int i = 0; i < tasks.count; i++) {
-        if ((pid_t) tasks.list[i].tid == task) {
-            tasks.count--;
-            fclose(tasks.schedstats[i]);
-            for (unsigned int j = i; j < tasks.count; j++) {
-                tasks.list[j].tid = tasks.list[j+1].tid;
-                tasks.schedstats[j] = tasks.schedstats[j+1];
-            }
-            return 0;
-        }
+  for (unsigned int i = 0; i < tasks.count; i++) {
+    if (tasks.tasks[i].tid == task) {
+      fclose(tasks.tasks[i].schedstat);
+      tasks.count--;
+      for (unsigned int j = i; j < tasks.count; j++) {
+        tasks.trace[j].tid = tasks.trace[j+1].tid;
+        memcpy(&tasks.tasks[j], &tasks.tasks[j+1], sizeof(struct trackTask));
+      }
+      return 0;
     }
-    return 1;
+  }
+  return 1;
 }
 
 int taskExists(pid_t const task) {
     for (unsigned int i = 0; i < tasks.count; i++) {
-        if ((pid_t) tasks.list[i].tid == task)
+        if (tasks.tasks[i].tid == task)
             return 1;
     }
     return 0;
 }
 
-struct task *getTask(pid_t const task) {
-    for (unsigned int i = 0; i < tasks.count; i++) {
-        if ((pid_t) tasks.list[i].tid == task)
-            return &tasks.list[i];
+void groupStopNonThreadTasks() {
+  for (unsigned int i = 0; i < tasks.count; i++) {
+    if (!tasks.tasks[i].thread) {
+      kill(tasks.tasks[i].tid, SIGSTOP);
     }
-    return NULL;
+  }
+}
+
+bool isNonThreadTask(pid_t const task) {
+  for (unsigned int i = 0; i < tasks.count; i++) {
+    if (tasks.tasks[i].tid == task) {
+      return !tasks.tasks[i].thread;
+    }
+  }
+  return false;
 }
 
 void help(char const *exec, char const opt, char const *optarg) {
@@ -207,15 +234,14 @@ struct callbackData {
 
 static struct callbackData _callback_data;
 
-#define TRACEE_INTERRUPT_SIGNAL SIGUSR2
 
 void timerCallback(int sig) {
     (void) sig;
     int r;
     do {
-        r = kill(_callback_data.tid, TRACEE_INTERRUPT_SIGNAL);
+        r = kill(_callback_data.tid, TRACEE_INTERUPT_SIGNAL);
     } while (r == -1 && errno == EAGAIN);
-    debug_printf("[%d] send %d\n", _callback_data.tid, TRACEE_INTERRUPT_SIGNAL);
+    debug_printf("[%d] send %d\n", _callback_data.tid, TRACEE_INTERUPT_SIGNAL);
     clock_gettime(CLOCK_REALTIME, &_callback_data.lastInterrupt);
 }
 
@@ -459,9 +485,9 @@ int main(int const argc, char **argv) {
     }
 
     pid_t samplingTarget = 0;
-    pid_t intrTarget = 0;
+    pid_t rootIntrTarget = 0;
     int intrStatus = 0;
-    struct VMMaps processMap = {};
+    struct VMMaps processMaps = {};
 
     //Set scheduler if one was chosen
     if (prio != 0) {
@@ -544,8 +570,8 @@ int main(int const argc, char **argv) {
     //PTRACE sends SIGTRACE to a newly ptraced process (in this case our target),
     //which we are waiting for
     do {
-        intrTarget = waitpid(samplingTarget, &intrStatus, __WALL);
-    } while (intrTarget == -1 && errno == EINTR);
+        rootIntrTarget = waitpid(samplingTarget, &intrStatus, __WALL);
+    } while (rootIntrTarget == -1 && errno == EINTR);
 
     //If something went wrong, break here
     if (WIFEXITED(intrStatus)) {
@@ -554,30 +580,30 @@ int main(int const argc, char **argv) {
     }
 
     //The PID of the target must matched with that one which we waited for
-    if (samplingTarget != intrTarget) {
+    if (samplingTarget != rootIntrTarget) {
         fprintf(stderr, "ERROR: unexpected pid stopped\n");
         ret = 2; goto exitWithTarget;
     }
 
     //Set PTRACE options to trace thread creation, target kills and exits
-    if (ptrace(PTRACE_SETOPTIONS, samplingTarget, NULL, PTRACE_O_TRACECLONE | PTRACE_O_TRACEEXIT | PTRACE_O_EXITKILL) == -1) {
+    if (ptrace(PTRACE_SETOPTIONS, samplingTarget, NULL, PTRACE_O_TRACECLONE | PTRACE_O_TRACEFORK | PTRACE_O_TRACEVFORK | PTRACE_O_TRACEEXIT | PTRACE_O_EXITKILL) == -1) {
         fprintf(stderr, "ERROR: Could not set ptrace options!\n");
         ret = 1; goto exitWithTarget;
     }
 
     //Check if we can read the process virtual memory maps
     struct VMMaps targetMap = {};
-    targetMap = getProcessVMMaps(samplingTarget, 1);
+    getProcessVMMaps(&targetMap, samplingTarget, 1);
     if (targetMap.count == 0) {
        fprintf(stderr, "ERROR: could not detect process vmmap\n");
        ret = 1; goto exitWithTarget;
     }
    
 #ifdef DEBUG
-    for (unsigned int i = 0; i < targetMap.count; i ++) {
-        printf("[DEBUG] VMMap %u: 0x%014lx, 0x%014lx, %s\n", i, targetMap.maps[i].addr, targetMap.maps[i].size, targetMap.maps[i].label);
-    }
+    dumpVMMaps("[DEBUG] VMMap ", targetMap);
 #endif
+
+    freeVMMaps(&targetMap);
 
     //Leave space for the profile header
     if (output != NULL) {
@@ -596,7 +622,6 @@ int main(int const argc, char **argv) {
         fprintf(stderr, "ERROR: could not add %d internal task structure\n", samplingTarget);
         ret = 1; goto exitWithTarget;
     }
-
 
     //statistics
     uint64_t samples = 0;
@@ -657,26 +682,24 @@ int main(int const argc, char **argv) {
             do {
                 intrTarget = waitpid(-1, &status, __WALL);
             } while (intrTarget == -1 && errno == EAGAIN);
-            //pauseTimer(&timer);
-            
-                                              
+
             if (WIFEXITED(status)) {
-                if (tasks.count == 1 || intrTarget == samplingTarget) {
-                    debug_printf("[%d] root tracee died\n", intrTarget);
-                    goto exitSampler;
-                } else {
-                    if (removeTask(intrTarget)) {
-                        fprintf(stderr, "ERROR: could not remove task %d from internal structure\n", intrTarget);
-                        ret = 1; goto exitWithTarget;
-                    }
-                    debug_printf("[%d] tracee died\n", intrTarget);
-                    if (groupStop && stopCount >= tasks.count) {
-                        // We waited for this thread to stop
-                        // but it died, so grab that sample
-                        break;
-                    } 
-                    continue;
-               }
+              if (tasks.count == 1 || intrTarget == samplingTarget) {
+                debug_printf("[%d] last tracee died\n", intrTarget);
+                goto exitSampler;
+              } else {
+                if (removeTask(intrTarget)) {
+                  fprintf(stderr, "ERROR: could not remove task %d from internal structure\n", intrTarget);
+                  ret = 1; goto exitWithTarget;
+                }
+                debug_printf("[%d] tracee died\n", intrTarget);
+                if (groupStop && stopCount >= tasks.count) {
+                  // We waited for this thread to stop
+                  // but it died, so grab that sample
+                  break;
+                }
+                continue;
+              }
             }
 
             if (!WIFSTOPPED(status)) {
@@ -686,8 +709,9 @@ int main(int const argc, char **argv) {
 
             signal = WSTOPSIG(status);
 
-            if (signal == TRACEE_INTERRUPT_SIGNAL && !groupStop) {
+            if (signal == TRACEE_INTERUPT_SIGNAL && !groupStop) {
                 debug_printf("[%d] initiate group stop\n", intrTarget);
+                groupStopNonThreadTasks();
                 signal = SIGSTOP;
                 groupStop = true;
                 stopCount = 0;
@@ -713,16 +737,23 @@ int main(int const argc, char **argv) {
                     }
                 }
             } else {
-                if (intrTarget == samplingTarget && signal == SIGTRAP && (status >> 16) == PTRACE_EVENT_EXIT) {
-                    signal = 0;
-                    processMap = getProcessVMMaps(intrTarget, 0);
-                    debug_printf("[%d] exit traced of root target\n", intrTarget);
-                } else if (signal == SIGTRAP && (status >> 16) == PTRACE_EVENT_CLONE) {
-                    signal = 0;
-               } else {
-                    debug_printf("[%d] untraced signal %d\n", intrTarget, signal);
-                    interrupts++;
+              int eventStatus = status >> 16;
+              if (signal == SIGTRAP && eventStatus == PTRACE_EVENT_EXIT && isNonThreadTask(intrTarget)) {
+                if (isNonThreadTask(intrTarget)) {
+                  debug_printf("[%d] non-thread tracee exits, record vmmaps\n", intrTarget);
+                  getProcessVMMaps(&processMaps, intrTarget, 0);
                 }
+                debug_printf("[%d] tracee exits\n", intrTarget);
+                signal = 0;
+              } else if (signal == SIGTRAP && (eventStatus == PTRACE_EVENT_CLONE ||
+                                               eventStatus == PTRACE_EVENT_FORK ||
+                                               eventStatus == PTRACE_EVENT_VFORK)) {
+                debug_printf("[%d] tracee event %d\n", intrTarget, status >> 16);
+                signal = 0;
+              } else {
+                debug_printf("[%d] untraced signal %d, with event status %d\n", intrTarget, signal, eventStatus);
+                interrupts++;
+              }
             }
             
             rp = ptrace(PTRACE_CONT, intrTarget, NULL, signal);
@@ -745,31 +776,30 @@ int main(int const argc, char **argv) {
 
         unsigned int i = 0;
         while (i < tasks.count) {
-            rp = ptrace(PTRACE_GETREGSET, tasks.list[i].tid, NT_PRSTATUS, &rvec);
-            //rp = ptrace(PTRACE_GETREGS, tasks.list[i].tid, NULL, &regs);
+            rp = ptrace(PTRACE_GETREGSET, tasks.tasks[i].tid, NT_PRSTATUS, &rvec);
             if (rp == -1 && errno == ESRCH) {
-                debug_printf("[%d] death on ptrace regs\n", tasks.list[i].tid);
+                debug_printf("[%d] death on ptrace regs\n", tasks.tasks[i].tid);
                 if (removeTaskIndex(i)) {
-                    fprintf(stderr, "ERROR: could not remove task %d from internal structure\n", tasks.list[i].tid);
+                    fprintf(stderr, "ERROR: could not remove task %u from internal structure\n", tasks.tasks[i].tid);
                     ret = 1; goto exitWithTarget;
                 }
                 continue;
             }
 #ifdef __aarch64__
-            tasks.list[i].pc = regs.pc;
+            tasks.trace[i].pc = regs.pc;
 #endif
 #ifdef __riscv
-            tasks.list[i].pc = regs.pc;
+            tasks.trace[i].pc = regs.pc;
 #endif
 #ifdef __amd64__
-            tasks.list[i].pc = regs.rip;
+            tasks.trace[i].pc = regs.rip;
 #endif
-            if (getCPUTimeFromSchedstat(tasks.schedstats[i], &cputime)) {
-                fprintf(stderr, "ERROR: could not read cputime of tid %d\n", tasks.list[i].tid);
+            if (getCPUTimeFromSchedstat(tasks.tasks[i].schedstat, &cputime)) {
+                fprintf(stderr, "ERROR: could not read cputime of tid %u\n", tasks.tasks[i].tid);
                 ret = 1; goto exitWithTarget;
             }
-            tasks.list[i].cputime = cputime;
-            debug_printf("[%d] pc: 0x%lx, cputime: %lu\n", tasks.list[i].tid, tasks.list[i].pc, tasks.list[i].cputime);
+            tasks.trace[i].cputime = cputime;
+            debug_printf("[%d] pc: 0x%lx, cputime: %lu\n", tasks.trace[i].tid, tasks.trace[i].pc, tasks.trace[i].cputime);
             i++;
         }
 
@@ -778,7 +808,7 @@ int main(int const argc, char **argv) {
             fwrite((void *) &sampleTime, sizeof(uint64_t), 1, output);
             fwrite((void *) samplePMUData, sizePMUData, 1, output);
             fwrite((void *) &tasks.count, sizeof(uint32_t), 1, output);
-            fwrite((void *) tasks.list, sizeof(struct task), tasks.count, output);
+            fwrite((void *) tasks.trace, sizeof(struct task), tasks.count, output);
         }
        
         samples++;
@@ -793,11 +823,11 @@ int main(int const argc, char **argv) {
 #endif
         i = 0;
         while(i < tasks.count) {
-            rp = ptrace(PTRACE_CONT, tasks.list[i].tid, NULL, NULL);
+            rp = ptrace(PTRACE_CONT, tasks.tasks[i].tid, NULL, NULL);
             if (rp == -1 && errno == ESRCH) {
-                debug_printf("[%d] death on ptrace cont after sample\n", tasks.list[i].tid);
+                debug_printf("[%d] death on ptrace cont after sample\n", tasks.tasks[i].tid);
                 if (removeTaskIndex(i)) {
-                    fprintf(stderr, "ERROR: could not remove task %d from internal structure\n", tasks.list[i].tid);
+                    fprintf(stderr, "ERROR: could not remove task %u from internal structure\n", tasks.tasks[i].tid);
                     ret = 1; goto exitWithTarget;
                 }
             }
@@ -821,13 +851,19 @@ int main(int const argc, char **argv) {
         ret = 1; goto exit;
     }
 
-    if (processMap.count == 0) {
+    if (processMaps.count == 0) {
         fprintf(stderr, "No process map was read, process exit was not reported!\n");
         ret = 1; goto exit;
     }
+
+
+#ifdef DEBUG
+    dumpVMMaps("[DEBUG] Final VMMap ", processMaps);
+#endif
+
     if (output != NULL) {
         //Write VMMap
-        fwrite((void *) processMap.maps, sizeof(struct VMMap), processMap.count, output);
+        fwrite((void *) processMaps.maps, sizeof(struct VMMap), processMaps.count, output);
         //HEADER
         uint32_t const magic = (uint32_t) pmuWhat();
         fseek(output, 0, SEEK_SET);
@@ -836,8 +872,10 @@ int main(int const argc, char **argv) {
         fwrite((void *) &totalWallLatencyUs, sizeof(uint64_t), 1, output);
         fwrite((void *) &samples, sizeof(uint64_t), 1, output);
         fwrite((void *) &sizePMUData, sizeof(uint32_t), 1, output);
-        fwrite((void *) &processMap.count, sizeof(uint32_t), 1, output);
+        fwrite((void *) &processMaps.count, sizeof(uint32_t), 1, output);
     }
+
+    freeVMMaps(&processMaps);
 
     if (verboseOutput) {
         printf("[VERBOSE] time       : %10lu us (ideal), %10lu us (actual)\n", totalWallTimeUs - totalWallLatencyUs, totalWallTimeUs);
