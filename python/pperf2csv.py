@@ -80,6 +80,7 @@ if not args.no_comment:
 
 outputCSV.write(args.delimiter.join(['time', 'cpu_time', 'thread_id', 'address', 'pmu_' + ['custom', 'current', 'voltage', 'power'][magic]]) + "\n")
 
+startWallTimeMs = None
 lastWallTimeMs = None
 
 for i in range(sampleCount):
@@ -92,7 +93,8 @@ for i in range(sampleCount):
     if lastWallTimeMs is not None and wallTimeMs < lastWallTimeMs:
       raise Exception("unexpected sample time wall time (smaller than previous' samples)")
 
-    normWallTimeMs = (wallTimeMs - lastWallTimeMs) if lastWallTimeMs is not None else 0
+    normWallTimeMs = (wallTimeMs - startWallTimeMs) if startWallTimeMs is not None else 0
+    startWallTimeMs = startWallTimeMs if startWallTimeMs is not None else wallTimeMs
     lastWallTimeMs = wallTimeMs
 
     for j in range(threadCount):
