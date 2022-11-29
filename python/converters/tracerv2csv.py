@@ -12,13 +12,13 @@ import gc
 from xopen import xopen
 
 
-parser = argparse.ArgumentParser(description="Parse binary tracev profile to csv")
+parser = argparse.ArgumentParser(description="Convert a binary FireSim tracerV profile to csv")
 parser.add_argument("trace", help="tracev binary profile (read from stdin if not provided)", default='-', nargs="?")
 
 parser.add_argument("-c", "--stdout", help="write to standard output", action="store_true", default=False)
 parser.add_argument("-o", "--output", help="write to file (disabled if stdout is used)", default=False)
 parser.add_argument("-b", "--block-size", type=int, default=4194304, help="cycles read at once (default: %(default)s)")
-parser.add_argument("-f", "--frequency", type=float, default=3200.0, help="frequency in MHz to translate cycles into time (0 - do not translate) (default: %(default)s MHz)")
+parser.add_argument("-f", "--frequency", type=float, default=1000.0, help="frequency in MHz to translate cycles into time (0 - do not translate) (default: %(default)s MHz)")
 parser.add_argument("-s", "--stat", default=False, action="store_true", help="gather and output cycle statistics")
 parser.add_argument("-g", "--gap", type=int, default=5000, help="record cycle gaps at least that big, requires stat (default: %(default)s)")
 

@@ -5,9 +5,9 @@ struct PMUData {
   double value;
 } __attribute__((packed));
 
- const char *pmuAbout(void) {
-   return "Dummy PMU, always reports 0.0 as PMU_POWER";
- }
+const char *pmuAbout(void) {
+  return "Dummy PMU, always reports 0.0 as PMU_POWER";
+}
 
 int pmuInit(char *pmuArg) {
   (void) pmuArg;

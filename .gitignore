@@ -1,7 +1,3 @@
 github
-pperf
-pperf-lynsyn
-pperf-rapl-sysfs
-*.o
-pmu/*.o
+build
 python/__pycache__
