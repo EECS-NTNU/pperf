@@ -126,6 +126,8 @@ class elfCache:
         global cacheFolder
         if not os.path.isdir(cacheFolder):
             os.makedirs(cacheFolder)
+    
+
 
     def getRawCache(self, name):
         global cacheFolder
@@ -195,6 +197,12 @@ class elfCache:
             return True
         else:
             return False
+
+    def closeCache(self, elf):
+        if elf in self.cacheFiles:
+            del self.cacheFiles[elf]
+        if elf in self.caches:
+            del self.caches[elf]
 
     def createCache(self, elf: str, name=None, sourceSearchPaths=[], dynmapfile=None, includeSource=True, basicblockReconstruction=True, verbose=True):
         global cacheVersion

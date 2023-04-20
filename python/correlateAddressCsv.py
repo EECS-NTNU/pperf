@@ -29,8 +29,9 @@ parser.add_argument("--no-header", help="input file does not contain a header ro
 parser.add_argument("--label-none", help="label unknown samples", default="_unknown")
 parser.add_argument("--fill-addresses", help="fill addresses not seen in input", default=False, action="store_true")
 parser.add_argument("--fill-columns", help="use this value for remaining columns when filling in addresses (default: '')", default='', type=str)
-parser.add_argument("--filter-unknown", help="filter unknown addresses", default=False, action="store_true")
+parser.add_argument("--filter-unknown", help="filter out unknown addresses", default=False, action="store_true")
 parser.add_argument("--only-filter-unknown", action="store_true", help="only filter addresses which are found in binary/vmmap", default=False)
+parser.add_argument("--include-comments", help="do not remove comments from input", default=False, action="store_true")
 parser.add_argument("--disable-cache", action="store_true", help="do not create or use prepared address caches", default=False)
 parser.add_argument("--delimiter", default=';', help="correlate selector (default: '%(default)s')", type=str)
 
@@ -124,9 +125,10 @@ csvFile = csv.reader(fInput, delimiter=args.delimiter)
 
 if (args.output):
     outputFile = xopen.xopen(args.output, 'w')
-    outputCsv = csv.writer(outputFile, delimiter=args.delimiter)
 else:
-    outputCsv = csv.writer(sys.stdout, delimiter=args.delimiter)
+    outputFile = sys.stdout
+
+outputCsv = csv.writer(outputFile, delimiter=args.delimiter)
 
 headerCol = args.address_icolumn
 colCount = None
@@ -134,6 +136,8 @@ colCount = None
 if not args.no_header:
     for header in csvFile:
         if header[0].startswith('#'):
+            if args.include_comments:
+                outputFile.write(args.delimiter.join(header) + '\n');
             continue
         if args.address_column:
             if args.address_column not in header:
@@ -154,6 +158,8 @@ seenPCs = []
 
 for line in csvFile:
     if line[0].startswith('#'):
+        if args.include_comments:
+            outputFile.write(args.delimiter.join(line) + '\n');
         continue
     if colCount is None:
         colCount = len(line)
@@ -165,7 +171,8 @@ for line in csvFile:
     if args.filter_unknown and not found:
         continue
 
-    seenPCs.append(pc)
+    if args.fill_addresses and pc not in seenPCs:
+        seenPCs.append(pc)
 
     if args.only_filter_unknown:
         outputCsv.writerow(line)
