@@ -91,21 +91,31 @@ correlateISelector = [i for i, x in enumerate(correlateSelectorNames) if x in co
 args.only_filter_unknown = len(correlateSelector) == 0
 
 sampleParser = None
-binaryCache = None
 
 if args.disable_cache:
     profileLib.disableCache = True
 
-if not args.binary:
-    sampleParser = profileLib.sampleParser()
-    sampleParser.addSearchPath(args.search_path)
-    sampleParser.loadVMMap(args.vmmap)
-    if args.kallsyms:
-        sampleParser.loadKallsyms(args.kallsyms)
-else:
-    binaryCache = profileLib.elfCache()
-    binaryCache.openOrCreateCache(args.binary)
+sampleParser = profileLib.sampleParser()
 
+if not args.binary:
+  sampleParser.addSearchPath(args.search_path)
+  sampleParser.loadVMMap(args.vmmap)
+  if args.kallsyms:
+    sampleParser.loadKallsyms(args.kallsyms)
+else:
+  sampleParser.cache.openOrCreateCache(args.binary)
+  addrStart = min(sampleParser.cache.getCache(args.binary)['cache'].keys())
+  addrEnd = max(sampleParser.cache.getCache(args.binary)['cache'].keys())
+  sampleParser.binaries.append({
+    'binary' : os.path.basename(args.binary),
+    'path' : args.binary,
+    'kernel' : False,
+    'static' : True,
+    'offset' : 0,
+    'start': addrStart,
+    'size' : addrEnd - addrStart,
+    'end' : addrEnd
+  })
 
 if not args.input:
     try:
@@ -116,12 +126,7 @@ if not args.input:
 else:
     fInput = xopen.xopen(args.input, 'r')
 
-# dialectBuf = fInput.read(1024 * 1024)
-# dialect = csv.Sniffer().sniff(io.StringIO(dialectBuf).read(1024 * 1024))
 csvFile = csv.reader(fInput, delimiter=args.delimiter)
-
-# del dialectBuf
-# gc.collect()
 
 if (args.output):
     outputFile = xopen.xopen(args.output, 'w')
@@ -152,56 +157,61 @@ if not args.no_header:
         colCount = len(header)
         break
 
-invalidSample = profileLib.SAMPLE.invalid.copy() + [None]
+invalidLabels = [args.label_none] * len(correlateISelector)
 
-seenPCs = []
+seenPCs = set()
+sampleBuffer = dict()
 
-for line in csvFile:
+if args.only_filter_unknown:
+  for line in csvFile:
     if line[0].startswith('#'):
-        if args.include_comments:
-            outputFile.write(args.delimiter.join(line) + '\n');
-        continue
+      if args.include_comments:
+        outputFile.write(args.delimiter.join(line) + '\n');
+      continue
+
+    if sampleParser.isPCKnown(int(line[headerCol], 0)):
+        outputCsv.writerow(line)
+else:
+  for line in csvFile:
+    if line[0].startswith('#'):
+      if args.include_comments:
+        outputFile.write(args.delimiter.join(line) + '\n');
+      continue
+
     if colCount is None:
-        colCount = len(line)
+      colCount = len(line)
 
     pc = int(line[headerCol], 0)
-
-    found = (sampleParser.isPCKnown(pc) and pc in sampleParser.cache.getCache(sampleParser.getBinaryFromPC(pc)['path'])['cache']) if sampleParser is not None else (pc in binaryCache.caches[args.binary]['cache'])
+    found = sampleParser.isPCKnown(pc)
 
     if args.filter_unknown and not found:
         continue
 
-    if args.fill_addresses and pc not in seenPCs:
-        seenPCs.append(pc)
+    if args.fill_addresses:
+        seenPCs.add(pc)
 
-    if args.only_filter_unknown:
-        outputCsv.writerow(line)
-    else:
-        if found:
-            tCache = binaryCache.caches[args.binary] if sampleParser is None else sampleParser.cache.getCache(sampleParser.getBinaryFromPC(pc)['path'])
-            sample = tCache['cache'][pc] + [tCache['asm'][pc]]
-        else:
-            sample = invalidSample
+    if pc not in sampleBuffer:
+      if found:
+        tCache = sampleParser.cache.getCache(sampleParser.getBinaryFromPC(pc)['path'])
+        sampleBuffer[pc] = selector(tCache['cache'][pc] + [tCache['asm'][pc]])
+      else:
+        sampleBuffer[pc] = invalidLabels
 
-        outputCsv.writerow(line[:headerCol + 1] + [args.label_none if x is None else x for x in selector(sample)] + line[headerCol + 1:])
+    outputCsv.writerow(line[:headerCol + 1] + sampleBuffer[pc] + line[headerCol + 1:])
 
-if args.fill_addresses:
-    seenPCs = set(seenPCs)
-    caches = []
-    if colCount is None:
-        colCount = headerCol
-    if sampleParser is None :
-        caches.append(binaryCache.caches[args.binary])
-    else:
-        for binary in sampleParser.binaries:
-            sampleParser.cache.openOrCreateCache(binary['path'])
-            caches.append(sampleParser.cache.caches[binary['path']])
 
-    for cache in caches:
+  if args.fill_addresses:
+      caches = []
+      if colCount is None:
+          colCount = headerCol
+      for binary in sampleParser.binaries:
+        sampleParser.cache.openOrCreateCache(binary['path'])
+
+      for cache in sampleParser.cache.caches.values():
         for pc in [x for x in cache['cache'] if x not in seenPCs]:
-            sample = cache['cache'][pc] + [cache['asm'][pc]]
-            outputCsv.writerow(([args.fill_columns] * headerCol) + [f'0x{pc:x}'] + [args.label_none if x is None else x for x in selector(sample)] + ([args.fill_columns] * (colCount - 1 - headerCol)))
+          sample = cache['cache'][pc] + [cache['asm'][pc]]
+          outputCsv.writerow(([args.fill_columns] * headerCol) + [f'0x{pc:x}'] + [args.label_none if x is None else x for x in selector(sample)] + ([args.fill_columns] * (colCount - 1 - headerCol)))
 
-        
+
 if (args.output):
     outputFile.close()
