@@ -26,7 +26,7 @@ annProfileVersion = 'ann0.1'
 unwindInline = True if 'UNWIND_INLINE' in os.environ and os.environ['UNWIND_INLINE'] == '1' else False
 disableCache = True if 'DISABLE_CACHE' in os.environ and os.environ['DISABLE_CACHE'] == '1' else False
 crossCompile = "" if 'CROSS_COMPILE' not in os.environ else os.environ['CROSS_COMPILE']
-cacheFolder = str(pathlib.Path.home()) + "/.cache/pperf/" if 'PPERF_CACHE' not in os.environ else os.environ['PPERF_CACHE']
+cacheFolder = str(pathlib.Path.home()) + "/.cache/pperf/" if 'PPERF_CACHE' not in os.environ or len(os.environ['PPERF_CACHE']) == 0 else os.environ['PPERF_CACHE']
 _toolchainVersion = None
 
 
